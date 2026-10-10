@@ -130,7 +130,346 @@
   </div>
 </div>
 
-<!-- Здесь будет часть 2: подключение Supabase и логика авторизации -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ============================================================
+// РУБЕЖ — конфигурация Supabase
+// ============================================================
+const SUPABASE_URL = 'https://jxcsxmzbwnxysvuhbazh.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_btY4fIAVgCY26CeB3KsreA_zHfvhip8';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================================
+// ГЛОБАЛЬНОЕ СОСТОЯНИЕ
+// ============================================================
+const state = {
+  session: null,
+  profile: null,        // { id, callsign, role }
+  screen: 'loading',    // auth | menu | ...
+  theme: localStorage.getItem('rubezh_theme') || 'dark',
+  // Данные для разных экранов
+  blocks: [],
+  questions: [],
+  currentBlock: null,
+  currentAttempt: null, // { id, questions: [], answers: [], index: 0 }
+  allUsers: [],         // для админа/начальника
+  allAttempts: [],      // для админа/начальника
+};
+
+// ============================================================
+// УТИЛИТЫ
+// ============================================================
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Транслитерация кириллицы в латиницу — чтобы из позывного делать email
+const TRANSLIT = {
+  'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y',
+  'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
+  'х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
+  ' ':'','_':'','-':''
+};
+function callsignToEmail(callsign) {
+  const clean = callsign.trim().toLowerCase();
+  let out = '';
+  for (const ch of clean) {
+    if (TRANSLIT[ch] !== undefined) out += TRANSLIT[ch];
+    else if (/[a-z0-9]/.test(ch)) out += ch;
+  }
+  if (!out) out = 'user' + Date.now();
+  return out + '@rubezh.local';
+}
+
+function applyTheme() {
+  document.body.classList.toggle('light', state.theme === 'light');
+  localStorage.setItem('rubezh_theme', state.theme);
+}
+function toggleTheme() {
+  state.theme = state.theme === 'light' ? 'dark' : 'light';
+  applyTheme();
+  render();
+}
+
+const app = document.getElementById('app');
+
+// ============================================================
+// АВТОРИЗАЦИЯ
+// ============================================================
+async function loadProfile() {
+  if (!state.session) { state.profile = null; return; }
+  const { data, error } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', state.session.user.id)
+    .single();
+  if (error) { console.error('Ошибка загрузки профиля:', error); state.profile = null; return; }
+  state.profile = data;
+}
+
+async function signUp(callsign, password) {
+  const email = callsignToEmail(callsign);
+  const { data, error } = await sb.auth.signUp({
+    email,
+    password,
+    options: { data: { callsign } }
+  });
+  if (error) throw error;
+  // Если требуется подтверждение email — пользователь не войдёт сразу
+  if (!data.session) {
+    throw new Error('Аккаунт создан, но вход не выполнен. Обратитесь к администратору (возможно, включено подтверждение email).');
+  }
+  state.session = data.session;
+  await loadProfile();
+}
+
+async function signIn(callsign, password) {
+  const email = callsignToEmail(callsign);
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  state.session = data.session;
+  await loadProfile();
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  state.session = null;
+  state.profile = null;
+  state.screen = 'auth';
+  render();
+}
+
+// ============================================================
+// ЭКРАН: АВТОРИЗАЦИЯ
+// ============================================================
+function renderAuth() {
+  state.screen = 'auth';
+  app.innerHTML = `
+    <div class="menu-header">
+      <h1>🎯 Рубеж</h1>
+      <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button>
+    </div>
+    <div class="card">
+      <p class="meta" style="text-align:center;margin-top:0">Система тестирования стажёров</p>
+    </div>
+    <div class="card">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Вход</button>
+        <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">Регистрация</button>
+      </div>
+
+      <div id="authForm"></div>
+    </div>
+  `;
+  renderAuthForm('login');
+}
+
+function switchAuthTab(tab) {
+  document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+  document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+  renderAuthForm(tab);
+}
+
+function renderAuthForm(tab) {
+  const form = document.getElementById('authForm');
+  if (tab === 'login') {
+    form.innerHTML = `
+      <label class="field-label">Позывной</label>
+      <input class="input" id="loginCallsign" placeholder="Например: Гром" autocomplete="username" autocapitalize="words">
+      <label class="field-label">Пароль</label>
+      <input class="input" id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password">
+      <div id="loginError" class="warn-box hidden"></div>
+      <button class="btn primary" id="loginBtn" onclick="doLogin()">Войти</button>
+    `;
+  } else {
+    form.innerHTML = `
+      <label class="field-label">Позывной</label>
+      <input class="input" id="regCallsign" placeholder="Придумайте позывной (без ФИО!)" autocapitalize="words">
+      <div class="meta" style="margin-top:-4px;margin-bottom:8px">Не используйте фамилию, имя, отчество и их части</div>
+      <label class="field-label">Пароль</label>
+      <input class="input" id="regPassword" type="password" placeholder="Минимум 6 символов" autocomplete="new-password">
+      <label class="field-label">Пароль ещё раз</label>
+      <input class="input" id="regPassword2" type="password" placeholder="Повторите пароль" autocomplete="new-password">
+      <div class="info-box">Регистрируясь, вы соглашаетесь на обработку позывного и результатов тестирования в целях подготовки. Данные хранятся только в системе и не передаются третьим лицам.</div>
+      <div id="regError" class="warn-box hidden"></div>
+      <button class="btn primary" id="regBtn" onclick="doRegister()">Зарегистрироваться</button>
+    `;
+  }
+}
+
+async function doLogin() {
+  const callsign = document.getElementById('loginCallsign').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const err = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+  err.classList.add('hidden');
+  if (!callsign || !password) {
+    err.textContent = 'Введите позывной и пароль';
+    err.classList.remove('hidden');
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Вход...';
+  try {
+    await signIn(callsign, password);
+    render();
+  } catch (e) {
+    err.textContent = 'Неверный позывной или пароль';
+    err.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Войти';
+  }
+}
+
+async function doRegister() {
+  const callsign = document.getElementById('regCallsign').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const password2 = document.getElementById('regPassword2').value;
+  const err = document.getElementById('regError');
+  const btn = document.getElementById('regBtn');
+  err.classList.add('hidden');
+
+  if (!callsign || callsign.length < 2) {
+    err.textContent = 'Позывной должен быть не короче 2 символов';
+    err.classList.remove('hidden');
+    return;
+  }
+  if (/[а-яёa-z]/i.test(callsign) === false) {
+    err.textContent = 'Позывной должен содержать буквы';
+    err.classList.remove('hidden');
+    return;
+  }
+  if (password.length < 6) {
+    err.textContent = 'Пароль минимум 6 символов';
+    err.classList.remove('hidden');
+    return;
+  }
+  if (password !== password2) {
+    err.textContent = 'Пароли не совпадают';
+    err.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Создание...';
+  try {
+    await signUp(callsign, password);
+    render();
+  } catch (e) {
+    err.textContent = e.message || 'Ошибка регистрации. Возможно, такой позывной уже занят.';
+    err.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Зарегистрироваться';
+  }
+}
+
+// ============================================================
+// ГЛАВНОЕ МЕНЮ (по ролям)
+// ============================================================
+function renderMenu() {
+  state.screen = 'menu';
+  const role = state.profile?.role || 'cadet';
+  const roleBadge = role === 'admin' ? 'Администратор' : role === 'chief' ? 'Начальник' : 'Стажёр';
+
+  let html = `
+    <div class="menu-header">
+      <h1>🎯 Рубеж</h1>
+      <div class="header-right">
+        <span class="user-badge"><b>${escapeHtml(state.profile?.callsign || '')}</b> · ${roleBadge}</span>
+        <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button>
+      </div>
+    </div>
+  `;
+
+  // Обучающая часть — доступна всем
+  html += `<div class="card">
+    <div class="block-title"><h2>📚 Тесты</h2></div>
+    <div class="meta">Прохождение тестов по блокам</div>
+    <button class="btn primary" onclick="renderTestsMenu()">Открыть</button>
+  </div>`;
+
+  // Мои результаты — стажёру и всем
+  html += `<div class="card">
+    <div class="block-title"><h2>📊 Мои результаты</h2></div>
+    <div class="meta">История ваших попыток</div>
+    <button class="btn" onclick="renderMyResults()">Открыть</button>
+  </div>`;
+
+  // Админ-панель
+  if (role === 'admin') {
+    html += `<div class="card">
+      <div class="block-title"><h2>⚙️ Админ-панель</h2></div>
+      <div class="meta">Управление блоками, вопросами, пользователями</div>
+      <button class="btn primary" onclick="renderAdminPanel()">Открыть</button>
+    </div>`;
+  }
+
+  // Кабинет начальника
+  if (role === 'chief' || role === 'admin') {
+    html += `<div class="card">
+      <div class="block-title"><h2>👁 Результаты стажёров</h2></div>
+      <div class="meta">Полная статистика, разбор ошибок, экспорт</div>
+      <button class="btn primary" onclick="renderChiefPanel()">Открыть</button>
+    </div>`;
+  }
+
+  html += `<div class="card">
+    <button class="btn back" onclick="doSignOut()">Выйти из аккаунта</button>
+  </div>`;
+
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+async function doSignOut() {
+  if (!confirm('Выйти из аккаунта?')) return;
+  await signOut();
+}
+
+// ============================================================
+// ЗАГЛУШКИ (для частей 3, 4, 5 — заменятся)
+// ============================================================
+function renderTestsMenu() { app.innerHTML = '<div class="card"><p>Раздел тестов — часть 3</p></div>'; }
+function renderMyResults() { app.innerHTML = '<div class="card"><p>Мои результаты — часть 3</p></div>'; }
+function renderAdminPanel() { app.innerHTML = '<div class="card"><p>Админка — часть 4</p></div>'; }
+function renderChiefPanel() { app.innerHTML = '<div class="card"><p>Кабинет начальника — часть 5</p></div>'; }
+
+// ============================================================
+// ГЛАВНЫЙ РЕНДЕР
+// ============================================================
+function render() {
+  if (!state.session) { renderAuth(); return; }
+  if (!state.profile) {
+    app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка профиля...</div>';
+    return;
+  }
+  renderMenu();
+}
+
+// ============================================================
+// ИНИЦИАЛИЗАЦИЯ
+// ============================================================
+async function init() {
+  applyTheme();
+  const { data } = await sb.auth.getSession();
+  if (data?.session) {
+    state.session = data.session;
+    await loadProfile();
+  }
+  render();
+
+  // Слушаем изменения авторизации
+  sb.auth.onAuthStateChange(async (event, session) => {
+    state.session = session;
+    if (session) await loadProfile();
+    else state.profile = null;
+    render();
+  });
+}
+
+init();
+</script>
+<!-- Здесь будет часть 3: тесты, админка, статистика -->
 <!-- Здесь будет часть 3: тесты, админка, статистика -->
 
 </body>
