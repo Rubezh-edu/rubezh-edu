@@ -66,6 +66,9 @@
   .badge.admin { background: #7c2d12; color: #fed7aa; }
   .badge.chief { background: #1e40af; color: #dbeafe; }
   .badge.cadet { background: #14532d; color: #bbf7d0; }
+  .badge.red { background: #7f1d1d; color: #fecaca; }
+  .badge.yellow { background: #78350f; color: #fde68a; }
+  .badge.green { background: #14532d; color: #bbf7d0; }
   .center { text-align: center; }
   .big { font-size: clamp(36px, 11vw, 46px); font-weight: 700; margin: 8px 0; line-height: 1.1; }
   .block-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -113,7 +116,23 @@
   .auth-tabs { display: flex; gap: 0; margin-bottom: 16px; background: var(--btn-bg); border-radius: 10px; padding: 4px; }
   .auth-tab { flex: 1; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; font-size: clamp(13.5px, 3.8vw, 15px); color: var(--text-dim); transition: .15s; border: none; background: transparent; font-family: inherit; }
   .auth-tab.active { background: var(--card-bg); color: var(--text-bright); font-weight: 600; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
-  .role-select { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--input-border); border-radius: 10px; padding: 8px 12px; font-family: inherit; font-size: 14.5px; }
+  /* Кабинет начальника */
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .kpi { background: var(--btn-bg); border-radius: 12px; padding: 14px 12px; text-align: center; }
+  .kpi .kpi-value { font-size: clamp(22px, 6vw, 28px); font-weight: 700; color: var(--text-bright); line-height: 1.1; margin-bottom: 4px; }
+  .kpi .kpi-label { font-size: clamp(11.5px, 3.2vw, 12.5px); color: var(--text-dim); }
+  .top-q-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px dashed var(--border-muted); }
+  .top-q-row:last-child { border-bottom: none; }
+  .top-q-rank { font-size: 18px; font-weight: 700; color: var(--warn-text); min-width: 26px; flex-shrink: 0; }
+  .top-q-body { flex: 1; }
+  .top-q-text { font-size: clamp(13.5px, 3.8vw, 15px); line-height: 1.45; color: var(--text); margin-bottom: 4px; }
+  .top-q-meta { font-size: clamp(11.5px, 3.2vw, 12.5px); color: var(--text-dim); }
+  .err-card { background: var(--card-bg); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; border-left: 4px solid var(--wrong); }
+  .err-card .err-q { font-size: clamp(13.5px, 3.8vw, 15px); font-weight: 500; color: var(--text-bright); margin-bottom: 6px; }
+  .err-card .err-opts { font-size: clamp(12.5px, 3.5vw, 14px); line-height: 1.55; color: var(--text-mid); }
+  .err-card .err-opts .correct { color: var(--correct); font-weight: 600; }
+  .err-card .err-opts .selected-wrong { color: var(--wrong); font-weight: 600; }
+  .err-card .err-count { font-size: clamp(11.5px, 3.2vw, 12.5px); color: var(--text-dim); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -140,8 +159,9 @@ const state = {
   profile: null,
   screen: 'loading',
   theme: localStorage.getItem('rubezh_theme') || 'dark',
-  currentBlock: null,       // для прохождения теста И для админки вопросов
+  currentBlock: null,
   currentAttempt: null,
+  allUsers: [],
 };
 
 // ============================================================
@@ -163,6 +183,10 @@ function callsignToEmail(c) {
 }
 function applyTheme() { document.body.classList.toggle('light', state.theme === 'light'); localStorage.setItem('rubezh_theme', state.theme); }
 function toggleTheme() { state.theme = state.theme === 'light' ? 'dark' : 'light'; applyTheme(); render(); }
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
 const app = document.getElementById('app');
 
 // ============================================================
@@ -170,17 +194,14 @@ const app = document.getElementById('app');
 // ============================================================
 function showModal(html) {
   closeModal();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id = 'modalOverlay';
-  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
-  overlay.innerHTML = `<div class="modal">${html}</div>`;
-  document.body.appendChild(overlay);
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = 'modalOverlay';
+  ov.onclick = (e) => { if (e.target === ov) closeModal(); };
+  ov.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(ov);
 }
-function closeModal() {
-  const ov = document.getElementById('modalOverlay');
-  if (ov) ov.remove();
-}
+function closeModal() { const ov = document.getElementById('modalOverlay'); if (ov) ov.remove(); }
 
 // ============================================================
 // АВТОРИЗАЦИЯ
@@ -297,19 +318,16 @@ function renderMenu() {
         <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button>
       </div>
     </div>`;
-
   html += `<div class="card">
     <div class="block-title"><h2>📚 Тесты</h2></div>
     <div class="meta">Прохождение тестов по блокам</div>
     <button class="btn primary" onclick="renderTestsMenu()">Открыть</button>
   </div>`;
-
   html += `<div class="card">
     <div class="block-title"><h2>📊 Мои результаты</h2></div>
     <div class="meta">История ваших попыток</div>
     <button class="btn" onclick="renderMyResults()">Открыть</button>
   </div>`;
-
   if (role === 'admin' || role === 'chief') {
     html += `<div class="card">
       <div class="block-title"><h2>⚙️ Управление тестами</h2></div>
@@ -337,7 +355,6 @@ async function renderTestsMenu() {
   state.screen = 'testsMenu';
   app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
     <h1>📚 Тесты</h1><div class="empty-state"><span class="spinner"></span>Загрузка блоков...</div>`;
-
   const { data: blocks, error } = await sb.from('blocks').select('*').order('order_index').order('created_at');
   if (error) {
     app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
@@ -347,10 +364,9 @@ async function renderTestsMenu() {
   const { data: counts } = await sb.from('questions').select('block_id');
   const cnt = {};
   (counts || []).forEach(q => { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
-
   let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div><h1>📚 Тесты</h1>`;
   if (!blocks || blocks.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.<br>Обратитесь к администратору.</div>`;
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.</div>`;
   } else {
     blocks.forEach(b => {
       const c = cnt[b.id] || 0;
@@ -364,7 +380,6 @@ async function renderTestsMenu() {
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
-
 async function startTest(blockId) {
   app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Подготовка...</div>`;
   const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
@@ -377,7 +392,6 @@ async function startTest(blockId) {
   state.currentAttempt = { id: attempt.id, blockId, questions: shuffled, index: 0, answers: [], finished: false };
   renderQuestionScreen();
 }
-
 function renderQuestionScreen() {
   state.screen = 'question';
   const att = state.currentAttempt;
@@ -385,7 +399,6 @@ function renderQuestionScreen() {
   const letters = ['а','б','в','г','д','е'];
   const pct = Math.round((att.index / att.questions.length) * 100);
   const options = Array.isArray(q.options) ? q.options : [];
-
   app.innerHTML = `
     <div class="topbar"><button class="back-btn" onclick="confirmExitTest()">←</button>
       <div class="title">${escapeHtml(state.currentBlock.name)} · ${att.index + 1} из ${att.questions.length}</div></div>
@@ -397,7 +410,6 @@ function renderQuestionScreen() {
       <div id="nextBlock"></div>
     </div>`;
   window.scrollTo(0, 0);
-
   const ob = document.getElementById('optionsBlock');
   options.forEach((text, i) => {
     const b = document.createElement('button');
@@ -420,7 +432,6 @@ async function answerQuestion(sel) {
   const isCorrect = sel === q.correct_index;
   await sb.from('answers').insert({ attempt_id: att.id, question_id: q.id, selected_index: sel, is_correct: isCorrect });
   att.answers.push({ questionId: q.id, selectedIndex: sel, isCorrect });
-
   document.querySelectorAll('#optionsBlock .btn').forEach((b, idx) => {
     b.disabled = true;
     if (SHOW_EXPLAIN_DURING_TEST) {
@@ -492,8 +503,7 @@ async function renderMyResults() {
       <thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>`;
     attempts.forEach(a => {
       const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-      const d = a.finished_at ? new Date(a.finished_at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
-      html += `<tr><td>${d}</td><td>${escapeHtml(a.blocks?.name || '—')}</td><td class="num">${a.score} / ${a.total}</td><td class="num">${pct}%</td></tr>`;
+      html += `<tr><td>${fmtDate(a.finished_at)}</td><td>${escapeHtml(a.blocks?.name || '—')}</td><td class="num">${a.score} / ${a.total}</td><td class="num">${pct}%</td></tr>`;
     });
     html += `</tbody></table></div></div>`;
   }
@@ -509,31 +519,21 @@ function renderAdminPanel() {
   state.screen = 'admin';
   const role = state.profile?.role;
   let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Управление тестами</div></div><h1>⚙️ Управление тестами</h1>`;
-  html += `<div class="card">
-    <div class="block-title"><h2>📚 Блоки</h2></div>
+  html += `<div class="card"><div class="block-title"><h2>📚 Блоки</h2></div>
     <div class="meta">Создать и редактировать разделы</div>
-    <button class="btn primary" onclick="renderAdminBlocks()">Управление блоками</button>
-  </div>`;
-  html += `<div class="card">
-    <div class="block-title"><h2>❓ Вопросы</h2></div>
+    <button class="btn primary" onclick="renderAdminBlocks()">Управление блоками</button></div>`;
+  html += `<div class="card"><div class="block-title"><h2>❓ Вопросы</h2></div>
     <div class="meta">Список всех вопросов</div>
-    <button class="btn" onclick="renderAdminAllQuestions()">Все вопросы</button>
-  </div>`;
+    <button class="btn" onclick="renderAdminAllQuestions()">Все вопросы</button></div>`;
   if (role === 'admin') {
-    html += `<div class="card">
-      <div class="block-title"><h2>👥 Пользователи</h2></div>
+    html += `<div class="card"><div class="block-title"><h2>👥 Пользователи</h2></div>
       <div class="meta">Роли и управление</div>
-      <button class="btn" onclick="renderAdminUsers()">Управление пользователями</button>
-    </div>`;
+      <button class="btn" onclick="renderAdminUsers()">Управление пользователями</button></div>`;
   }
   html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
-
-// ============================================================
-// БЛОКИ
-// ============================================================
 async function renderAdminBlocks() {
   state.screen = 'adminBlocks';
   app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
@@ -541,7 +541,6 @@ async function renderAdminBlocks() {
   const { data: counts } = await sb.from('questions').select('block_id');
   const cnt = {};
   (counts || []).forEach(q => { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
-
   let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Блоки</div></div><h1>📚 Блоки</h1>
     <div class="card"><button class="btn primary" onclick="openBlockEditor(null)">+ Добавить блок</button></div>`;
   if (!blocks || blocks.length === 0) {
@@ -567,7 +566,6 @@ async function renderAdminBlocks() {
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
-
 async function openBlockEditor(blockId) {
   let block = null;
   if (blockId) {
@@ -608,17 +606,12 @@ async function deleteBlock(blockId, name) {
   if (error) { alert('Ошибка: ' + error.message); return; }
   renderAdminBlocks();
 }
-
-// ============================================================
-// ВОПРОСЫ В БЛОКЕ
-// ============================================================
 async function renderAdminQuestions(blockId) {
   state.screen = 'adminQuestions';
   app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
   const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
   state.currentBlock = block;
   const { data: questions } = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
-
   let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminBlocks()">←</button><div class="title">${escapeHtml(block?.name || '')}</div></div>
     <h1>📝 ${escapeHtml(block?.name || 'Вопросы')}</h1>
     <div class="card"><button class="btn primary" onclick="openQuestionEditor(null)">+ Добавить вопрос</button></div>`;
@@ -644,7 +637,6 @@ async function renderAdminQuestions(blockId) {
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
-
 async function openQuestionEditor(questionId) {
   let q = null;
   if (questionId) {
@@ -655,7 +647,6 @@ async function openQuestionEditor(questionId) {
   while (opts.length < 2) opts.push('');
   window.__qOptions = opts;
   window.__qCorrectIdx = q?.correct_index ?? 0;
-
   showModal(`
     <h3>${questionId ? 'Редактировать вопрос' : 'Новый вопрос'}</h3>
     <label class="field-label">Текст вопроса</label>
@@ -671,11 +662,9 @@ async function openQuestionEditor(questionId) {
       <button class="btn" onclick="closeModal()">Отмена</button>
       <button class="btn primary" onclick="saveQuestion('${questionId || ''}')">Сохранить</button>
     </div>`);
-
   document.getElementById('addOptBtn').onclick = addOption;
   renderOptionsEditor();
 }
-
 function syncOptionsFromDOM() {
   const c = document.getElementById('optionsContainer');
   if (!c) return;
@@ -709,7 +698,6 @@ function removeOption(idx) {
   else if (window.__qCorrectIdx > idx) window.__qCorrectIdx--;
   renderOptionsEditor();
 }
-
 async function saveQuestion(questionId) {
   syncOptionsFromDOM();
   const text = document.getElementById('qText').value.trim();
@@ -735,15 +723,10 @@ async function deleteQuestion(questionId) {
   if (error) { alert('Ошибка: ' + error.message); return; }
   renderAdminQuestions(state.currentBlock.id);
 }
-
-// ============================================================
-// ВСЕ ВОПРОСЫ
-// ============================================================
 async function renderAdminAllQuestions() {
   state.screen = 'adminAllQ';
   app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
   const { data: questions } = await sb.from('questions').select('*, blocks(name)').order('created_at', { ascending: false }).limit(500);
-
   let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Все вопросы</div></div><h1>❓ Все вопросы</h1>`;
   if (!questions || questions.length === 0) {
     html += `<div class="empty-state"><span class="big-emoji">📭</span>Нет ни одного вопроса.</div>`;
@@ -761,20 +744,14 @@ async function renderAdminAllQuestions() {
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
-
-// ============================================================
-// ПОЛЬЗОВАТЕЛИ (только для admin)
-// ============================================================
 async function renderAdminUsers() {
   state.screen = 'adminUsers';
   app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
   const { data: users } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
   const roleLabel = r => r === 'admin' ? 'Админ' : r === 'chief' ? 'Начальник' : 'Стажёр';
-
   let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Пользователи</div></div><h1>👥 Пользователи</h1>
     <div class="info-box">Роли: <b>admin</b> — полный доступ, <b>chief</b> — начальник, <b>cadet</b> — стажёр.</div>
     <div class="meta">Всего: ${users?.length || 0}</div>`;
-
   (users || []).forEach(u => {
     const isMe = u.id === state.session.user.id;
     html += `<div class="item-card">
@@ -792,7 +769,6 @@ async function renderAdminUsers() {
       </div>
     </div>`;
   });
-
   html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
   app.innerHTML = html;
   window.scrollTo(0, 0);
@@ -804,18 +780,292 @@ async function changeRole(userId, role) {
   renderAdminUsers();
 }
 async function deleteUser(userId, callsign) {
-  if (!confirm(`Удалить ${callsign}?\n\nЕго профиль и все результаты удалятся.\nУчётная запись входа останется занятой — если человек вернётся, попросите администратора Supabase удалить её вручную.`)) return;
+  if (!confirm(`Удалить ${callsign}?\n\nЕго профиль и все результаты удалятся.\nУчётная запись входа останется — если нужно, удалите её вручную в Supabase.`)) return;
   const { error } = await sb.from('profiles').delete().eq('id', userId);
   if (error) { alert('Ошибка: ' + error.message); return; }
   renderAdminUsers();
 }
 
 // ============================================================
-// ЗАГЛУШКА (часть 5)
+// КАБИНЕТ НАЧАЛЬНИКА
 // ============================================================
-function renderChiefPanel() {
-  app.innerHTML = `<div class="card"><div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
-    <p>Кабинет начальника — часть 5 (скоро)</p></div>`;
+async function renderChiefPanel() {
+  state.screen = 'chief';
+  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Результаты стажёров</div></div>
+    <h1>👁 Результаты стажёров</h1><div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+
+  // Загружаем всё нужное
+  const [{ data: users }, { data: attempts }, { data: blocks }] = await Promise.all([
+    sb.from('profiles').select('*').order('created_at'),
+    sb.from('attempts').select('*').not('finished_at', 'is', null).order('finished_at', { ascending: false }),
+    sb.from('blocks').select('*'),
+  ]);
+
+  state.allUsers = users || [];
+  const blockMap = {};
+  (blocks || []).forEach(b => { blockMap[b.id] = b.name; });
+
+  // Считаем по каждому стажёру
+  const statsByUser = {};
+  (users || []).forEach(u => {
+    statsByUser[u.id] = { user: u, attempts: [], avg: 0, best: 0, lastAt: null };
+  });
+  (attempts || []).forEach(a => {
+    if (!statsByUser[a.user_id]) return;
+    const s = statsByUser[a.user_id];
+    s.attempts.push(a);
+    if (!s.lastAt || new Date(a.finished_at) > new Date(s.lastAt)) s.lastAt = a.finished_at;
+  });
+  Object.values(statsByUser).forEach(s => {
+    if (s.attempts.length === 0) return;
+    const pcts = s.attempts.map(a => a.total > 0 ? (a.score / a.total) * 100 : 0);
+    s.avg = Math.round(pcts.reduce((x, y) => x + y, 0) / pcts.length);
+    s.best = Math.round(Math.max(...pcts));
+  });
+
+  // Общая статистика
+  const totalCadets = (users || []).filter(u => u.role === 'cadet').length;
+  const totalAttempts = (attempts || []).length;
+  const allPcts = (attempts || []).map(a => a.total > 0 ? (a.score / a.total) * 100 : 0);
+  const avgAll = allPcts.length ? Math.round(allPcts.reduce((x, y) => x + y, 0) / allPcts.length) : 0;
+  const passed = allPcts.filter(p => p >= 60).length;
+  const passRate = allPcts.length ? Math.round(passed / allPcts.length * 100) : 0;
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Результаты стажёров</div></div>
+    <h1>👁 Результаты стажёров</h1>`;
+
+  html += `<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-value">${totalCadets}</div><div class="kpi-label">Стажёров</div></div>
+    <div class="kpi"><div class="kpi-value">${totalAttempts}</div><div class="kpi-label">Попыток</div></div>
+    <div class="kpi"><div class="kpi-value">${avgAll}%</div><div class="kpi-label">Средний балл</div></div>
+    <div class="kpi"><div class="kpi-value">${passRate}%</div><div class="kpi-label">Сдали (≥60%)</div></div>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="row">
+      <button class="btn small" onclick="exportResultsCSV()">📥 Экспорт в CSV</button>
+      <button class="btn small" onclick="renderChiefPanel()">🔄 Обновить</button>
+    </div>
+  </div>`;
+
+  // Таблица по стажёрам
+  const cadets = (users || []).filter(u => u.role === 'cadet');
+  html += `<div class="card"><div class="block-title"><h2>📋 Стажёры</h2></div>`;
+  if (cadets.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">👥</span>Пока нет ни одного стажёра.</div>`;
+  } else {
+    html += `<div class="table-wrap"><table class="data-table">
+      <thead><tr><th>Позывной</th><th class="num">Попыток</th><th class="num">Средний</th><th class="num">Лучший</th><th>Последний раз</th></tr></thead><tbody>`;
+    cadets.forEach(u => {
+      const s = statsByUser[u.id];
+      const avgBadge = s.attempts.length === 0 ? '—' : `<span class="badge ${s.avg >= 75 ? 'green' : s.avg >= 60 ? 'yellow' : 'red'}">${s.avg}%</span>`;
+      html += `<tr class="clickable" onclick="renderCadetDetail('${u.id}')" style="cursor:pointer">
+        <td><b>${escapeHtml(u.callsign)}</b></td>
+        <td class="num">${s.attempts.length}</td>
+        <td class="num">${avgBadge}</td>
+        <td class="num">${s.attempts.length ? s.best + '%' : '—'}</td>
+        <td>${s.lastAt ? fmtDate(s.lastAt) : '—'}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    html += `<div class="meta" style="margin-top:10px">👆 Нажмите на стажёра, чтобы увидеть его ошибки</div>`;
+  }
+  html += `</div>`;
+
+  // Топ проблемных вопросов
+  const { data: allAnswers } = await sb.from('answers').select('question_id, is_correct').eq('is_correct', false);
+  const wrongCount = {};
+  (allAnswers || []).forEach(a => { wrongCount[a.question_id] = (wrongCount[a.question_id] || 0) + 1; });
+  const topWrongIds = Object.entries(wrongCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]);
+  let topQuestions = [];
+  if (topWrongIds.length > 0) {
+    const { data: qs } = await sb.from('questions').select('id, text, options, correct_index, block_id').in('id', topWrongIds);
+    topQuestions = (qs || []).map(q => ({ ...q, wrongCount: wrongCount[q.id], blockName: blockMap[q.block_id] || '—' }));
+    topQuestions.sort((a, b) => b.wrongCount - a.wrongCount);
+  }
+
+  html += `<div class="card"><div class="block-title"><h2>🔥 Топ проблемных вопросов</h2></div>`;
+  if (topQuestions.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">✨</span>Пока нет данных об ошибках.</div>`;
+  } else {
+    const letters = ['а','б','в','г','д','е'];
+    topQuestions.forEach((q, i) => {
+      const correct = Array.isArray(q.options) && q.options[q.correct_index] ? q.options[q.correct_index] : '';
+      html += `<div class="top-q-row">
+        <div class="top-q-rank">${i + 1}</div>
+        <div class="top-q-body">
+          <div class="top-q-text">${escapeHtml(q.text)}</div>
+          <div class="top-q-meta">Блок: ${escapeHtml(q.blockName)} · ошиблись <b>${q.wrongCount}</b> раз</div>
+          ${correct ? `<div class="top-q-meta" style="color: var(--correct); margin-top:4px">✓ ${letters[q.correct_index]}) ${escapeHtml(correct)}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// ============================================================
+// ДЕТАЛЬНЫЙ РАЗБОР ПО СТАЖЁРУ
+// ============================================================
+async function renderCadetDetail(userId) {
+  state.screen = 'cadetDetail';
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+
+  const { data: user } = await sb.from('profiles').select('*').eq('id', userId).single();
+  const { data: attempts } = await sb.from('attempts').select('*, blocks(name)').eq('user_id', userId).not('finished_at', 'is', null).order('finished_at', { ascending: false });
+
+  // Все ответы этого пользователя
+  const attemptIds = (attempts || []).map(a => a.id);
+  let allAnswers = [];
+  if (attemptIds.length > 0) {
+    const { data: ans } = await sb.from('answers').select('*').in('attempt_id', attemptIds);
+    allAnswers = ans || [];
+  }
+
+  // Собираем проблемные вопросы (те, где ошиблись)
+  const wrongByQ = {};
+  allAnswers.filter(a => !a.is_correct).forEach(a => {
+    wrongByQ[a.question_id] = (wrongByQ[a.question_id] || 0) + 1;
+  });
+  const wrongQIds = Object.keys(wrongByQ);
+  let wrongQuestions = [];
+  if (wrongQIds.length > 0) {
+    const { data: qs } = await sb.from('questions').select('*, blocks(name)').in('id', wrongQIds);
+    wrongQuestions = (qs || []).map(q => ({ ...q, wrongCount: wrongByQ[q.id] }));
+    wrongQuestions.sort((a, b) => b.wrongCount - a.wrongCount);
+  }
+
+  const totalAttempts = (attempts || []).length;
+  const totalAnswers = allAnswers.length;
+  const correctAnswers = allAnswers.filter(a => a.is_correct).length;
+  const accuracy = totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0;
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderChiefPanel()">←</button><div class="title">${escapeHtml(user?.callsign || '')}</div></div>
+    <h1>👤 ${escapeHtml(user?.callsign || 'Стажёр')}</h1>`;
+
+  html += `<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-value">${totalAttempts}</div><div class="kpi-label">Попыток</div></div>
+    <div class="kpi"><div class="kpi-value">${accuracy}%</div><div class="kpi-label">Точность</div></div>
+    <div class="kpi"><div class="kpi-value">${correctAnswers}</div><div class="kpi-label">Верных</div></div>
+    <div class="kpi"><div class="kpi-value">${totalAnswers - correctAnswers}</div><div class="kpi-label">Ошибок</div></div>
+  </div>`;
+
+  // История попыток
+  html += `<div class="card"><div class="block-title"><h2>📜 История попыток</h2></div>`;
+  if (!attempts || attempts.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>Стажёр ещё не проходил тесты.</div>`;
+  } else {
+    html += `<div class="table-wrap"><table class="data-table">
+      <thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>`;
+    attempts.forEach(a => {
+      const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
+      html += `<tr><td>${fmtDate(a.finished_at)}</td><td>${escapeHtml(a.blocks?.name || '—')}</td><td class="num">${a.score} / ${a.total}</td><td class="num">${pct}%</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  html += `</div>`;
+
+  // Проблемные вопросы
+  html += `<div class="card"><div class="block-title"><h2>❌ Проблемные вопросы</h2></div>
+    <div class="meta">Вопросы, где стажёр ошибался. Именно их стоит разобрать.</div>`;
+  if (wrongQuestions.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">🎉</span>Ошибок нет!</div>`;
+  } else {
+    const letters = ['а','б','в','г','д','е'];
+    wrongQuestions.forEach(q => {
+      const opts = Array.isArray(q.options) ? q.options : [];
+      html += `<div class="err-card">
+        <div class="err-q">${escapeHtml(q.text)}</div>
+        <div class="err-opts">
+          ${opts.map((o, i) => {
+            const cls = i === q.correct_index ? 'correct' : '';
+            return `<div class="${cls}">${i === q.correct_index ? '✓' : '•'} ${letters[i]}) ${escapeHtml(o)}</div>`;
+          }).join('')}
+        </div>
+        ${q.explain ? `<div class="err-opts" style="margin-top:6px;color:var(--text-dim)"><b>Объяснение:</b> ${escapeHtml(q.explain)}</div>` : ''}
+        <div class="err-count">Блок: ${escapeHtml(q.blocks?.name || '—')} · ошибок: <b>${q.wrongCount}</b></div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="card">
+    <button class="btn" onclick="exportCadetCSV('${userId}')">📥 Экспорт ошибок в CSV</button>
+    <button class="btn back" onclick="renderChiefPanel()">← К списку стажёров</button>
+  </div>`;
+
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+  window.__currentCadet = { user, attempts, wrongQuestions };
+}
+
+// ============================================================
+// ЭКСПОРТ CSV
+// ============================================================
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r => r.map(cell => {
+    const s = String(cell == null ? '' : cell);
+    if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }).join(';')).join('\n');
+  // BOM для Excel, чтобы кириллица не кракозябрилась
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function exportResultsCSV() {
+  const [{ data: users }, { data: attempts }] = await Promise.all([
+    sb.from('profiles').select('*').order('callsign'),
+    sb.from('attempts').select('*, blocks(name)').not('finished_at', 'is', null).order('finished_at'),
+  ]);
+  const userMap = {};
+  (users || []).forEach(u => { userMap[u.id] = u; });
+
+  const rows = [['Позывной', 'Роль', 'Дата', 'Блок', 'Правильных', 'Всего', '%']];
+  (attempts || []).forEach(a => {
+    const u = userMap[a.user_id];
+    const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
+    rows.push([
+      u?.callsign || '—',
+      u?.role || '—',
+      fmtDate(a.finished_at),
+      a.blocks?.name || '—',
+      a.score,
+      a.total,
+      pct,
+    ]);
+  });
+  downloadCSV('rubezh_rezultaty_' + new Date().toISOString().slice(0, 10) + '.csv', rows);
+}
+
+async function exportCadetCSV(userId) {
+  const data = window.__currentCadet;
+  if (!data) return;
+  const rows = [['Позывной', 'Вопрос', 'Блок', 'Количество ошибок', 'Правильный ответ', 'Объяснение']];
+  const letters = ['а','б','в','г','д','е'];
+  (data.wrongQuestions || []).forEach(q => {
+    const correct = Array.isArray(q.options) && q.options[q.correct_index] ? (letters[q.correct_index] + ') ' + q.options[q.correct_index]) : '';
+    rows.push([
+      data.user?.callsign || '',
+      q.text,
+      q.blocks?.name || '',
+      q.wrongCount,
+      correct,
+      q.explain || '',
+    ]);
+  });
+  downloadCSV('rubezh_' + (data.user?.callsign || 'cadet') + '_oshibki.csv', rows);
 }
 
 // ============================================================
