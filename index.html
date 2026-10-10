@@ -133,27 +133,32 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ============================================================
-// РУБЕЖ — конфигурация Supabase
+// КОНФИГУРАЦИЯ SUPABASE
 // ============================================================
 const SUPABASE_URL = 'https://jxcsxmzbwnxysvuhbazh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_btY4fIAVgCY26CeB3KsreA_zHfvhip8';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ============================================================
+// НАСТРОЙКИ ОТОБРАЖЕНИЯ
+// ============================================================
+// Показывать ли стажёру, верно ли он ответил сразу после ответа
+const SHOW_EXPLAIN_DURING_TEST = false;
+
+// ============================================================
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ
 // ============================================================
 const state = {
   session: null,
-  profile: null,        // { id, callsign, role }
-  screen: 'loading',    // auth | menu | ...
+  profile: null,
+  screen: 'loading',
   theme: localStorage.getItem('rubezh_theme') || 'dark',
-  // Данные для разных экранов
   blocks: [],
   questions: [],
   currentBlock: null,
-  currentAttempt: null, // { id, questions: [], answers: [], index: 0 }
-  allUsers: [],         // для админа/начальника
-  allAttempts: [],      // для админа/начальника
+  currentAttempt: null,
+  allUsers: [],
+  allAttempts: [],
 };
 
 // ============================================================
@@ -163,7 +168,6 @@ function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// Транслитерация кириллицы в латиницу — чтобы из позывного делать email
 const TRANSLIT = {
   'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y',
   'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
@@ -210,15 +214,11 @@ async function loadProfile() {
 async function signUp(callsign, password) {
   const email = callsignToEmail(callsign);
   const { data, error } = await sb.auth.signUp({
-    email,
-    password,
+    email, password,
     options: { data: { callsign } }
   });
   if (error) throw error;
-  // Если требуется подтверждение email — пользователь не войдёт сразу
-  if (!data.session) {
-    throw new Error('Аккаунт создан, но вход не выполнен. Обратитесь к администратору (возможно, включено подтверждение email).');
-  }
+  if (!data.session) throw new Error('Аккаунт создан, но вход не выполнен. Обратитесь к администратору.');
   state.session = data.session;
   await loadProfile();
 }
@@ -257,7 +257,6 @@ function renderAuth() {
         <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Вход</button>
         <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">Регистрация</button>
       </div>
-
       <div id="authForm"></div>
     </div>
   `;
@@ -303,22 +302,10 @@ async function doLogin() {
   const err = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
   err.classList.add('hidden');
-  if (!callsign || !password) {
-    err.textContent = 'Введите позывной и пароль';
-    err.classList.remove('hidden');
-    return;
-  }
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Вход...';
-  try {
-    await signIn(callsign, password);
-    render();
-  } catch (e) {
-    err.textContent = 'Неверный позывной или пароль';
-    err.classList.remove('hidden');
-    btn.disabled = false;
-    btn.textContent = 'Войти';
-  }
+  if (!callsign || !password) { err.textContent = 'Введите позывной и пароль'; err.classList.remove('hidden'); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Вход...';
+  try { await signIn(callsign, password); render(); }
+  catch (e) { err.textContent = 'Неверный позывной или пароль'; err.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Войти'; }
 }
 
 async function doRegister() {
@@ -328,43 +315,16 @@ async function doRegister() {
   const err = document.getElementById('regError');
   const btn = document.getElementById('regBtn');
   err.classList.add('hidden');
-
-  if (!callsign || callsign.length < 2) {
-    err.textContent = 'Позывной должен быть не короче 2 символов';
-    err.classList.remove('hidden');
-    return;
-  }
-  if (/[а-яёa-z]/i.test(callsign) === false) {
-    err.textContent = 'Позывной должен содержать буквы';
-    err.classList.remove('hidden');
-    return;
-  }
-  if (password.length < 6) {
-    err.textContent = 'Пароль минимум 6 символов';
-    err.classList.remove('hidden');
-    return;
-  }
-  if (password !== password2) {
-    err.textContent = 'Пароли не совпадают';
-    err.classList.remove('hidden');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Создание...';
-  try {
-    await signUp(callsign, password);
-    render();
-  } catch (e) {
-    err.textContent = e.message || 'Ошибка регистрации. Возможно, такой позывной уже занят.';
-    err.classList.remove('hidden');
-    btn.disabled = false;
-    btn.textContent = 'Зарегистрироваться';
-  }
+  if (!callsign || callsign.length < 2) { err.textContent = 'Позывной не короче 2 символов'; err.classList.remove('hidden'); return; }
+  if (password.length < 6) { err.textContent = 'Пароль минимум 6 символов'; err.classList.remove('hidden'); return; }
+  if (password !== password2) { err.textContent = 'Пароли не совпадают'; err.classList.remove('hidden'); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Создание...';
+  try { await signUp(callsign, password); render(); }
+  catch (e) { err.textContent = e.message || 'Ошибка регистрации'; err.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Зарегистрироваться'; }
 }
 
 // ============================================================
-// ГЛАВНОЕ МЕНЮ (по ролям)
+// ГЛАВНОЕ МЕНЮ
 // ============================================================
 function renderMenu() {
   state.screen = 'menu';
@@ -381,21 +341,18 @@ function renderMenu() {
     </div>
   `;
 
-  // Обучающая часть — доступна всем
   html += `<div class="card">
     <div class="block-title"><h2>📚 Тесты</h2></div>
     <div class="meta">Прохождение тестов по блокам</div>
     <button class="btn primary" onclick="renderTestsMenu()">Открыть</button>
   </div>`;
 
-  // Мои результаты — стажёру и всем
   html += `<div class="card">
     <div class="block-title"><h2>📊 Мои результаты</h2></div>
     <div class="meta">История ваших попыток</div>
     <button class="btn" onclick="renderMyResults()">Открыть</button>
   </div>`;
 
-  // Админ-панель
   if (role === 'admin') {
     html += `<div class="card">
       <div class="block-title"><h2>⚙️ Админ-панель</h2></div>
@@ -404,7 +361,6 @@ function renderMenu() {
     </div>`;
   }
 
-  // Кабинет начальника
   if (role === 'chief' || role === 'admin') {
     html += `<div class="card">
       <div class="block-title"><h2>👁 Результаты стажёров</h2></div>
@@ -427,12 +383,280 @@ async function doSignOut() {
 }
 
 // ============================================================
-// ЗАГЛУШКИ (для частей 3, 4, 5 — заменятся)
+// ЭКРАН: СПИСОК БЛОКОВ
 // ============================================================
-function renderTestsMenu() { app.innerHTML = '<div class="card"><p>Раздел тестов — часть 3</p></div>'; }
-function renderMyResults() { app.innerHTML = '<div class="card"><p>Мои результаты — часть 3</p></div>'; }
-function renderAdminPanel() { app.innerHTML = '<div class="card"><p>Админка — часть 4</p></div>'; }
-function renderChiefPanel() { app.innerHTML = '<div class="card"><p>Кабинет начальника — часть 5</p></div>'; }
+async function renderTestsMenu() {
+  state.screen = 'testsMenu';
+  app.innerHTML = `
+    <div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
+    <h1>📚 Тесты</h1>
+    <div class="empty-state"><span class="spinner"></span>Загрузка блоков...</div>
+  `;
+
+  const { data: blocks, error } = await sb
+    .from('blocks')
+    .select('*')
+    .order('order_index', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
+      <div class="card"><div class="warn-box">Ошибка загрузки: ${escapeHtml(error.message)}</div></div>`;
+    return;
+  }
+
+  const { data: counts } = await sb.from('questions').select('block_id');
+  const countMap = {};
+  (counts || []).forEach(q => { countMap[q.block_id] = (countMap[q.block_id] || 0) + 1; });
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
+    <h1>📚 Тесты</h1>`;
+
+  if (!blocks || blocks.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.<br>Обратитесь к администратору.</div>`;
+  } else {
+    blocks.forEach(b => {
+      const cnt = countMap[b.id] || 0;
+      html += `<div class="item-card" onclick="${cnt > 0 ? `startTest('${b.id}')` : ''}">
+        <div class="item-title">${escapeHtml(b.name)}</div>
+        <div class="item-sub">
+          ${b.description ? escapeHtml(b.description) + ' · ' : ''}
+          ${cnt} ${cnt === 1 ? 'вопрос' : cnt < 5 && cnt > 0 ? 'вопроса' : 'вопросов'}
+          ${cnt === 0 ? ' · пока пусто' : ''}
+        </div>
+      </div>`;
+    });
+  }
+
+  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// ============================================================
+// НАЧАЛО ТЕСТА
+// ============================================================
+async function startTest(blockId) {
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Подготовка теста...</div>`;
+
+  const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
+  const { data: questions, error: qErr } = await sb
+    .from('questions')
+    .select('*')
+    .eq('block_id', blockId)
+    .order('order_index', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (qErr || !questions || questions.length === 0) {
+    alert('Не удалось загрузить вопросы');
+    renderTestsMenu();
+    return;
+  }
+
+  const shuffled = questions.slice().sort(() => Math.random() - 0.5);
+
+  const { data: attempt, error: aErr } = await sb
+    .from('attempts')
+    .insert({ user_id: state.session.user.id, block_id: blockId, total: shuffled.length })
+    .select()
+    .single();
+
+  if (aErr) {
+    alert('Не удалось создать попытку: ' + aErr.message);
+    renderTestsMenu();
+    return;
+  }
+
+  state.currentBlock = block;
+  state.currentAttempt = {
+    id: attempt.id, blockId,
+    questions: shuffled, index: 0,
+    answers: [], finished: false,
+  };
+  renderQuestionScreen();
+}
+
+// ============================================================
+// ЭКРАН ВОПРОСА
+// ============================================================
+function renderQuestionScreen() {
+  state.screen = 'question';
+  const att = state.currentAttempt;
+  const q = att.questions[att.index];
+  const letters = ['а', 'б', 'в', 'г', 'д', 'е'];
+  const pct = Math.round((att.index / att.questions.length) * 100);
+  const options = Array.isArray(q.options) ? q.options : [];
+
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="back-btn" onclick="confirmExitTest()">←</button>
+      <div class="title">${escapeHtml(state.currentBlock.name)} · ${att.index + 1} из ${att.questions.length}</div>
+    </div>
+    <div class="progress"><div style="width:${pct}%"></div></div>
+    <div class="card">
+      <div class="q-text">${att.index + 1}. ${escapeHtml(q.text)}</div>
+      <div id="optionsBlock"></div>
+      <div id="explainBlock"></div>
+      <div id="nextBlock"></div>
+    </div>
+  `;
+  window.scrollTo(0, 0);
+
+  const optsBlock = document.getElementById('optionsBlock');
+  options.forEach((text, i) => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.innerHTML = `<span style="font-weight:700">${letters[i]})</span> ${escapeHtml(text)}`;
+    b.onclick = () => answerQuestion(i);
+    optsBlock.appendChild(b);
+  });
+}
+
+function confirmExitTest() {
+  if (confirm('Прервать тест? Результат не сохранится как пройденный.')) {
+    if (state.currentAttempt?.id) {
+      sb.from('attempts').delete().eq('id', state.currentAttempt.id).then(() => {});
+    }
+    state.currentAttempt = null;
+    renderTestsMenu();
+  }
+}
+
+// ============================================================
+// ОТВЕТ НА ВОПРОС
+// ============================================================
+async function answerQuestion(selectedIndex) {
+  const att = state.currentAttempt;
+  const q = att.questions[att.index];
+  const isCorrect = selectedIndex === q.correct_index;
+
+  await sb.from('answers').insert({
+    attempt_id: att.id, question_id: q.id,
+    selected_index: selectedIndex, is_correct: isCorrect,
+  });
+
+  att.answers.push({ questionId: q.id, selectedIndex, isCorrect });
+
+  const buttons = document.querySelectorAll('#optionsBlock .btn');
+  buttons.forEach((b, idx) => {
+    b.disabled = true;
+    if (SHOW_EXPLAIN_DURING_TEST) {
+      if (idx === q.correct_index) b.classList.add('correct');
+      else if (idx === selectedIndex) b.classList.add('wrong');
+    }
+  });
+
+  if (SHOW_EXPLAIN_DURING_TEST) {
+    const explain = document.getElementById('explainBlock');
+    const head = isCorrect ? '✅ Верно!' : '❌ Неверно';
+    explain.innerHTML = `<div style="background: var(--explain-bg); border-left: 4px solid var(--${isCorrect ? 'correct' : 'wrong'}); padding: 12px 14px; border-radius: 8px; margin-top: 14px;">
+      <b>${head}</b><br><br>${q.explain || ''}
+    </div>`;
+  }
+
+  const next = document.getElementById('nextBlock');
+  next.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.className = 'btn primary';
+  const isLast = att.index + 1 >= att.questions.length;
+  btn.textContent = isLast ? '🏁 Завершить тест' : 'Следующий вопрос →';
+  btn.onclick = () => { if (isLast) finishTest(); else { att.index++; renderQuestionScreen(); } };
+  next.appendChild(btn);
+  btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ============================================================
+// ЗАВЕРШЕНИЕ ТЕСТА
+// ============================================================
+async function finishTest() {
+  const att = state.currentAttempt;
+  const score = att.answers.filter(a => a.isCorrect).length;
+  const total = att.questions.length;
+
+  await sb.from('attempts').update({
+    finished_at: new Date().toISOString(), score, total,
+  }).eq('id', att.id);
+
+  state.currentAttempt = { ...att, finished: true, score, total };
+  renderTestResult();
+}
+
+function renderTestResult() {
+  state.screen = 'testResult';
+  const att = state.currentAttempt;
+  const pct = Math.round((att.score / att.total) * 100);
+  const grade = pct >= 90 ? 'отлично' : pct >= 75 ? 'хорошо' : pct >= 60 ? 'удовлетворительно' : 'неудовлетворительно';
+
+  app.innerHTML = `
+    <div class="topbar"><button class="back-btn" onclick="closeTestResult()">←</button><div class="title">${escapeHtml(state.currentBlock.name)}</div></div>
+    <div class="card center">
+      <h2>Результат</h2>
+      <div class="big">${att.score} / ${att.total}</div>
+      <div class="meta">${pct}% правильных · ${grade}</div>
+    </div>
+    <div class="card">
+      <div class="info-box">Правильные ответы на вопросы будет разбирать ваш руководитель.</div>
+      <button class="btn primary" onclick="renderTestsMenu()">← К тестам</button>
+      <button class="btn" onclick="renderMyResults()">📊 Все мои результаты</button>
+      <button class="btn back" onclick="renderMenu()">← Главное меню</button>
+    </div>
+  `;
+  window.scrollTo(0, 0);
+}
+
+function closeTestResult() {
+  state.currentAttempt = null;
+  renderTestsMenu();
+}
+
+// ============================================================
+// МОИ РЕЗУЛЬТАТЫ
+// ============================================================
+async function renderMyResults() {
+  state.screen = 'myResults';
+  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div>
+    <h1>📊 Мои результаты</h1>
+    <div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+
+  const { data: attempts, error } = await sb
+    .from('attempts')
+    .select('*, blocks(name)')
+    .eq('user_id', state.session.user.id)
+    .not('finished_at', 'is', null)
+    .order('finished_at', { ascending: false });
+
+  if (error) {
+    app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
+      <div class="card"><div class="warn-box">Ошибка: ${escapeHtml(error.message)}</div></div>`;
+    return;
+  }
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div>
+    <h1>📊 Мои результаты</h1>`;
+
+  if (!attempts || attempts.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>Вы ещё не проходили ни одного теста.</div>`;
+  } else {
+    html += `<div class="card"><div class="table-wrap"><table class="data-table">
+      <thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>`;
+    attempts.forEach(a => {
+      const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
+      const d = a.finished_at ? new Date(a.finished_at).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+      html += `<tr><td>${d}</td><td>${escapeHtml(a.blocks?.name || '—')}</td><td class="num">${a.score} / ${a.total}</td><td class="num">${pct}%</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// ============================================================
+// ЗАГЛУШКИ (части 4 и 5)
+// ============================================================
+function renderAdminPanel() { app.innerHTML = '<div class="card"><div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><p>Админка — часть 4 (скоро)</p></div>'; }
+function renderChiefPanel() { app.innerHTML = '<div class="card"><div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><p>Кабинет начальника — часть 5 (скоро)</p></div>'; }
 
 // ============================================================
 // ГЛАВНЫЙ РЕНДЕР
@@ -452,25 +676,17 @@ function render() {
 async function init() {
   applyTheme();
   const { data } = await sb.auth.getSession();
-  if (data?.session) {
-    state.session = data.session;
-    await loadProfile();
-  }
+  if (data?.session) { state.session = data.session; await loadProfile(); }
   render();
 
-  // Слушаем изменения авторизации
   sb.auth.onAuthStateChange(async (event, session) => {
     state.session = session;
-    if (session) await loadProfile();
-    else state.profile = null;
+    if (session) await loadProfile(); else state.profile = null;
     render();
   });
 }
 
 init();
 </script>
-<!-- Здесь будет часть 3: тесты, админка, статистика -->
-<!-- Здесь будет часть 3: тесты, админка, статистика -->
-
 </body>
 </html>
