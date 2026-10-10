@@ -58,7 +58,7 @@
   .btn.back { background: transparent; color: var(--text-dim); text-align: center; }
   .btn.small { min-height: 38px; padding: 8px 12px; font-size: clamp(13px, 3.5vw, 14px); margin: 4px 0; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .row .btn { flex: 1; text-align: center; min-width: 120px; }
+  .row .btn { flex: 1; text-align: center; min-width: 100px; }
   .meta { font-size: clamp(12px, 3.4vw, 13.5px); color: var(--text-dim); margin-bottom: 8px; }
   .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; background: var(--badge-bg); font-size: clamp(11.5px, 3.2vw, 12.5px); color: var(--badge-text); margin: 2px 4px 2px 0; }
   .badge.ok { background: var(--ok-bg); color: var(--ok-text); }
@@ -84,9 +84,9 @@
   .q-text { font-size: clamp(16px, 4.6vw, 18px); line-height: 1.45; margin-bottom: 14px; font-weight: 500; }
   .progress { height: 6px; background: var(--progress-bg); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
   .progress > div { height: 100%; background: var(--accent); transition: width .3s; }
-  .item-card { background: var(--card-bg); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; border: 1px solid transparent; transition: background .15s; }
-  @media (hover: hover) { .item-card:hover { border-color: var(--border-muted); } }
-  .item-card:active { background: var(--btn-bg); }
+  .item-card { background: var(--card-bg); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; border: 1px solid transparent; transition: background .15s; }
+  .item-card.clickable { cursor: pointer; }
+  @media (hover: hover) { .item-card.clickable:hover { border-color: var(--border-muted); } }
   .item-card .item-title { font-size: clamp(14.5px, 4vw, 16px); font-weight: 600; line-height: 1.4; color: var(--text-bright); margin-bottom: 4px; }
   .item-card .item-sub { font-size: clamp(12px, 3.4vw, 13.5px); color: var(--text-dim); line-height: 1.4; }
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 15px; }
@@ -102,8 +102,8 @@
   .opt-row .opt-marker { min-width: 34px; height: 42px; display: flex; align-items: center; justify-content: center; background: var(--btn-bg); border-radius: 8px; font-weight: 700; color: var(--text-dim); font-size: 15px; }
   .opt-row .opt-marker.correct { background: var(--correct); color: #fff; }
   .opt-row .btn.del { min-width: 40px; height: 42px; min-height: 42px; padding: 0; margin: 0; text-align: center; font-size: 18px; flex: 0 0 42px; }
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
-  .modal { background: var(--card-bg); border-radius: 14px; padding: 20px; max-width: 500px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: flex-start; justify-content: center; padding: 16px; z-index: 1000; overflow-y: auto; }
+  .modal { background: var(--card-bg); border-radius: 14px; padding: 20px; max-width: 520px; width: 100%; max-height: 88vh; overflow-y: auto; margin: auto; }
   .modal h3 { margin-top: 0; }
   .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
   .modal-actions .btn { flex: 1; text-align: center; }
@@ -113,52 +113,35 @@
   .auth-tabs { display: flex; gap: 0; margin-bottom: 16px; background: var(--btn-bg); border-radius: 10px; padding: 4px; }
   .auth-tab { flex: 1; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; font-size: clamp(13.5px, 3.8vw, 15px); color: var(--text-dim); transition: .15s; border: none; background: transparent; font-family: inherit; }
   .auth-tab.active { background: var(--card-bg); color: var(--text-bright); font-weight: 600; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
-  .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border-muted); font-size: clamp(13.5px, 3.8vw, 15px); }
-  .stat-row:last-child { border-bottom: none; }
-  .stat-row .stat-label { color: var(--text-dim); }
-  .stat-row .stat-value { color: var(--text-bright); font-weight: 600; font-variant-numeric: tabular-nums; }
-  .block-pick-row { display: flex; gap: 8px; align-items: center; padding: 10px 12px; background: var(--btn-bg); border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
-  .block-pick-row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); flex-shrink: 0; }
-  .block-pick-row label { flex: 1; cursor: pointer; font-size: clamp(14px, 3.9vw, 15.5px); }
+  .role-select { background: var(--input-bg); color: var(--text); border: 1.5px solid var(--input-border); border-radius: 10px; padding: 8px 12px; font-family: inherit; font-size: 14.5px; }
 </style>
 </head>
 <body>
 <div class="wrap" id="app">
-  <div class="empty-state">
-    <span class="spinner"></span>
-    Загрузка...
-  </div>
+  <div class="empty-state"><span class="spinner"></span>Загрузка...</div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ============================================================
-// КОНФИГУРАЦИЯ SUPABASE
+// КОНФИГ
 // ============================================================
 const SUPABASE_URL = 'https://jxcsxmzbwnxysvuhbazh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_btY4fIAVgCY26CeB3KsreA_zHfvhip8';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ============================================================
-// НАСТРОЙКИ ОТОБРАЖЕНИЯ
-// ============================================================
-// Показывать ли стажёру, верно ли он ответил сразу после ответа
 const SHOW_EXPLAIN_DURING_TEST = false;
 
 // ============================================================
-// ГЛОБАЛЬНОЕ СОСТОЯНИЕ
+// СОСТОЯНИЕ
 // ============================================================
 const state = {
   session: null,
   profile: null,
   screen: 'loading',
   theme: localStorage.getItem('rubezh_theme') || 'dark',
-  blocks: [],
-  questions: [],
-  currentBlock: null,
+  currentBlock: null,       // для прохождения теста И для админки вопросов
   currentAttempt: null,
-  allUsers: [],
-  allAttempts: [],
 };
 
 // ============================================================
@@ -167,15 +150,9 @@ const state = {
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-
-const TRANSLIT = {
-  'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y',
-  'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
-  'х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
-  ' ':'','_':'','-':''
-};
-function callsignToEmail(callsign) {
-  const clean = callsign.trim().toLowerCase();
+const TRANSLIT = {'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',' ':'','_':'','-':''};
+function callsignToEmail(c) {
+  const clean = c.trim().toLowerCase();
   let out = '';
   for (const ch of clean) {
     if (TRANSLIT[ch] !== undefined) out += TRANSLIT[ch];
@@ -184,142 +161,124 @@ function callsignToEmail(callsign) {
   if (!out) out = 'user' + Date.now();
   return out + '@rubezh.local';
 }
-
-function applyTheme() {
-  document.body.classList.toggle('light', state.theme === 'light');
-  localStorage.setItem('rubezh_theme', state.theme);
-}
-function toggleTheme() {
-  state.theme = state.theme === 'light' ? 'dark' : 'light';
-  applyTheme();
-  render();
-}
-
+function applyTheme() { document.body.classList.toggle('light', state.theme === 'light'); localStorage.setItem('rubezh_theme', state.theme); }
+function toggleTheme() { state.theme = state.theme === 'light' ? 'dark' : 'light'; applyTheme(); render(); }
 const app = document.getElementById('app');
+
+// ============================================================
+// МОДАЛКИ
+// ============================================================
+function showModal(html) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'modalOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+  overlay.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(overlay);
+}
+function closeModal() {
+  const ov = document.getElementById('modalOverlay');
+  if (ov) ov.remove();
+}
 
 // ============================================================
 // АВТОРИЗАЦИЯ
 // ============================================================
 async function loadProfile() {
   if (!state.session) { state.profile = null; return; }
-  const { data, error } = await sb
-    .from('profiles')
-    .select('*')
-    .eq('id', state.session.user.id)
-    .single();
-  if (error) { console.error('Ошибка загрузки профиля:', error); state.profile = null; return; }
+  const { data, error } = await sb.from('profiles').select('*').eq('id', state.session.user.id).single();
+  if (error) { console.error(error); state.profile = null; return; }
   state.profile = data;
 }
-
 async function signUp(callsign, password) {
   const email = callsignToEmail(callsign);
-  const { data, error } = await sb.auth.signUp({
-    email, password,
-    options: { data: { callsign } }
-  });
+  const { data, error } = await sb.auth.signUp({ email, password, options: { data: { callsign } } });
   if (error) throw error;
-  if (!data.session) throw new Error('Аккаунт создан, но вход не выполнен. Обратитесь к администратору.');
-  state.session = data.session;
-  await loadProfile();
+  if (!data.session) throw new Error('Аккаунт создан, но вход не выполнен.');
+  state.session = data.session; await loadProfile();
 }
-
 async function signIn(callsign, password) {
   const email = callsignToEmail(callsign);
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw error;
-  state.session = data.session;
-  await loadProfile();
+  state.session = data.session; await loadProfile();
 }
-
 async function signOut() {
   await sb.auth.signOut();
-  state.session = null;
-  state.profile = null;
-  state.screen = 'auth';
-  render();
+  state.session = null; state.profile = null; state.screen = 'auth'; render();
 }
 
 // ============================================================
-// ЭКРАН: АВТОРИЗАЦИЯ
+// АВТОРИЗАЦИЯ UI
 // ============================================================
 function renderAuth() {
   state.screen = 'auth';
   app.innerHTML = `
-    <div class="menu-header">
-      <h1>🎯 Рубеж</h1>
-      <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button>
-    </div>
-    <div class="card">
-      <p class="meta" style="text-align:center;margin-top:0">Система тестирования стажёров</p>
-    </div>
+    <div class="menu-header"><h1>🎯 Рубеж</h1>
+      <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button></div>
+    <div class="card"><p class="meta" style="text-align:center;margin:0">Система тестирования стажёров</p></div>
     <div class="card">
       <div class="auth-tabs">
         <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Вход</button>
         <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">Регистрация</button>
       </div>
       <div id="authForm"></div>
-    </div>
-  `;
+    </div>`;
   renderAuthForm('login');
 }
-
 function switchAuthTab(tab) {
   document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
   document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
   renderAuthForm(tab);
 }
-
 function renderAuthForm(tab) {
   const form = document.getElementById('authForm');
   if (tab === 'login') {
     form.innerHTML = `
       <label class="field-label">Позывной</label>
-      <input class="input" id="loginCallsign" placeholder="Например: Гром" autocomplete="username" autocapitalize="words">
+      <input class="input" id="loginCallsign" placeholder="Например: Гром" autocapitalize="words">
       <label class="field-label">Пароль</label>
-      <input class="input" id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password">
+      <input class="input" id="loginPassword" type="password" placeholder="Пароль">
       <div id="loginError" class="warn-box hidden"></div>
-      <button class="btn primary" id="loginBtn" onclick="doLogin()">Войти</button>
-    `;
+      <button class="btn primary" id="loginBtn" onclick="doLogin()">Войти</button>`;
   } else {
     form.innerHTML = `
       <label class="field-label">Позывной</label>
       <input class="input" id="regCallsign" placeholder="Придумайте позывной (без ФИО!)" autocapitalize="words">
-      <div class="meta" style="margin-top:-4px;margin-bottom:8px">Не используйте фамилию, имя, отчество и их части</div>
+      <div class="meta" style="margin:-4px 0 8px">Не используйте фамилию, имя, отчество</div>
       <label class="field-label">Пароль</label>
-      <input class="input" id="regPassword" type="password" placeholder="Минимум 6 символов" autocomplete="new-password">
+      <input class="input" id="regPassword" type="password" placeholder="Минимум 6 символов">
       <label class="field-label">Пароль ещё раз</label>
-      <input class="input" id="regPassword2" type="password" placeholder="Повторите пароль" autocomplete="new-password">
-      <div class="info-box">Регистрируясь, вы соглашаетесь на обработку позывного и результатов тестирования в целях подготовки. Данные хранятся только в системе и не передаются третьим лицам.</div>
+      <input class="input" id="regPassword2" type="password" placeholder="Повторите пароль">
+      <div class="info-box">Регистрируясь, вы соглашаетесь на обработку позывного и результатов в целях подготовки.</div>
       <div id="regError" class="warn-box hidden"></div>
-      <button class="btn primary" id="regBtn" onclick="doRegister()">Зарегистрироваться</button>
-    `;
+      <button class="btn primary" id="regBtn" onclick="doRegister()">Зарегистрироваться</button>`;
   }
 }
-
 async function doLogin() {
-  const callsign = document.getElementById('loginCallsign').value.trim();
-  const password = document.getElementById('loginPassword').value;
+  const c = document.getElementById('loginCallsign').value.trim();
+  const p = document.getElementById('loginPassword').value;
   const err = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
   err.classList.add('hidden');
-  if (!callsign || !password) { err.textContent = 'Введите позывной и пароль'; err.classList.remove('hidden'); return; }
+  if (!c || !p) { err.textContent = 'Введите позывной и пароль'; err.classList.remove('hidden'); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Вход...';
-  try { await signIn(callsign, password); render(); }
+  try { await signIn(c, p); render(); }
   catch (e) { err.textContent = 'Неверный позывной или пароль'; err.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Войти'; }
 }
-
 async function doRegister() {
-  const callsign = document.getElementById('regCallsign').value.trim();
-  const password = document.getElementById('regPassword').value;
-  const password2 = document.getElementById('regPassword2').value;
+  const c = document.getElementById('regCallsign').value.trim();
+  const p = document.getElementById('regPassword').value;
+  const p2 = document.getElementById('regPassword2').value;
   const err = document.getElementById('regError');
   const btn = document.getElementById('regBtn');
   err.classList.add('hidden');
-  if (!callsign || callsign.length < 2) { err.textContent = 'Позывной не короче 2 символов'; err.classList.remove('hidden'); return; }
-  if (password.length < 6) { err.textContent = 'Пароль минимум 6 символов'; err.classList.remove('hidden'); return; }
-  if (password !== password2) { err.textContent = 'Пароли не совпадают'; err.classList.remove('hidden'); return; }
+  if (!c || c.length < 2) { err.textContent = 'Позывной не короче 2 символов'; err.classList.remove('hidden'); return; }
+  if (p.length < 6) { err.textContent = 'Пароль минимум 6 символов'; err.classList.remove('hidden'); return; }
+  if (p !== p2) { err.textContent = 'Пароли не совпадают'; err.classList.remove('hidden'); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Создание...';
-  try { await signUp(callsign, password); render(); }
+  try { await signUp(c, p); render(); }
   catch (e) { err.textContent = e.message || 'Ошибка регистрации'; err.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Зарегистрироваться'; }
 }
 
@@ -329,17 +288,15 @@ async function doRegister() {
 function renderMenu() {
   state.screen = 'menu';
   const role = state.profile?.role || 'cadet';
-  const roleBadge = role === 'admin' ? 'Администратор' : role === 'chief' ? 'Начальник' : 'Стажёр';
-
+  const roleLabel = role === 'admin' ? 'Администратор' : role === 'chief' ? 'Начальник' : 'Стажёр';
   let html = `
     <div class="menu-header">
       <h1>🎯 Рубеж</h1>
       <div class="header-right">
-        <span class="user-badge"><b>${escapeHtml(state.profile?.callsign || '')}</b> · ${roleBadge}</span>
+        <span class="user-badge"><b>${escapeHtml(state.profile?.callsign || '')}</b> · ${roleLabel}</span>
         <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button>
       </div>
-    </div>
-  `;
+    </div>`;
 
   html += `<div class="card">
     <div class="block-title"><h2>📚 Тесты</h2></div>
@@ -353,287 +310,181 @@ function renderMenu() {
     <button class="btn" onclick="renderMyResults()">Открыть</button>
   </div>`;
 
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'chief') {
     html += `<div class="card">
-      <div class="block-title"><h2>⚙️ Админ-панель</h2></div>
-      <div class="meta">Управление блоками, вопросами, пользователями</div>
+      <div class="block-title"><h2>⚙️ Управление тестами</h2></div>
+      <div class="meta">Блоки и вопросы</div>
       <button class="btn primary" onclick="renderAdminPanel()">Открыть</button>
     </div>`;
   }
-
   if (role === 'chief' || role === 'admin') {
     html += `<div class="card">
       <div class="block-title"><h2>👁 Результаты стажёров</h2></div>
-      <div class="meta">Полная статистика, разбор ошибок, экспорт</div>
+      <div class="meta">Полная статистика и разбор ошибок</div>
       <button class="btn primary" onclick="renderChiefPanel()">Открыть</button>
     </div>`;
   }
-
-  html += `<div class="card">
-    <button class="btn back" onclick="doSignOut()">Выйти из аккаунта</button>
-  </div>`;
-
+  html += `<div class="card"><button class="btn back" onclick="doSignOut()">Выйти из аккаунта</button></div>`;
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
-
-async function doSignOut() {
-  if (!confirm('Выйти из аккаунта?')) return;
-  await signOut();
-}
+async function doSignOut() { if (!confirm('Выйти из аккаунта?')) return; await signOut(); }
 
 // ============================================================
-// ЭКРАН: СПИСОК БЛОКОВ
+// ТЕСТЫ
 // ============================================================
 async function renderTestsMenu() {
   state.screen = 'testsMenu';
-  app.innerHTML = `
-    <div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
-    <h1>📚 Тесты</h1>
-    <div class="empty-state"><span class="spinner"></span>Загрузка блоков...</div>
-  `;
+  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
+    <h1>📚 Тесты</h1><div class="empty-state"><span class="spinner"></span>Загрузка блоков...</div>`;
 
-  const { data: blocks, error } = await sb
-    .from('blocks')
-    .select('*')
-    .order('order_index', { ascending: true })
-    .order('created_at', { ascending: true });
-
+  const { data: blocks, error } = await sb.from('blocks').select('*').order('order_index').order('created_at');
   if (error) {
     app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
-      <div class="card"><div class="warn-box">Ошибка загрузки: ${escapeHtml(error.message)}</div></div>`;
+      <div class="card"><div class="warn-box">Ошибка: ${escapeHtml(error.message)}</div></div>`;
     return;
   }
-
   const { data: counts } = await sb.from('questions').select('block_id');
-  const countMap = {};
-  (counts || []).forEach(q => { countMap[q.block_id] = (countMap[q.block_id] || 0) + 1; });
+  const cnt = {};
+  (counts || []).forEach(q => { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
 
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
-    <h1>📚 Тесты</h1>`;
-
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div><h1>📚 Тесты</h1>`;
   if (!blocks || blocks.length === 0) {
     html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.<br>Обратитесь к администратору.</div>`;
   } else {
     blocks.forEach(b => {
-      const cnt = countMap[b.id] || 0;
-      html += `<div class="item-card" onclick="${cnt > 0 ? `startTest('${b.id}')` : ''}">
+      const c = cnt[b.id] || 0;
+      html += `<div class="item-card ${c > 0 ? 'clickable' : ''}" ${c > 0 ? `onclick="startTest('${b.id}')"` : ''}>
         <div class="item-title">${escapeHtml(b.name)}</div>
-        <div class="item-sub">
-          ${b.description ? escapeHtml(b.description) + ' · ' : ''}
-          ${cnt} ${cnt === 1 ? 'вопрос' : cnt < 5 && cnt > 0 ? 'вопроса' : 'вопросов'}
-          ${cnt === 0 ? ' · пока пусто' : ''}
-        </div>
+        <div class="item-sub">${b.description ? escapeHtml(b.description) + ' · ' : ''}${c} ${c === 1 ? 'вопрос' : c < 5 && c > 0 ? 'вопроса' : 'вопросов'}${c === 0 ? ' · пока пусто' : ''}</div>
       </div>`;
     });
   }
-
   html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
 
-// ============================================================
-// НАЧАЛО ТЕСТА
-// ============================================================
 async function startTest(blockId) {
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Подготовка теста...</div>`;
-
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Подготовка...</div>`;
   const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
-  const { data: questions, error: qErr } = await sb
-    .from('questions')
-    .select('*')
-    .eq('block_id', blockId)
-    .order('order_index', { ascending: true })
-    .order('created_at', { ascending: true });
-
-  if (qErr || !questions || questions.length === 0) {
-    alert('Не удалось загрузить вопросы');
-    renderTestsMenu();
-    return;
-  }
-
+  const { data: questions, error: qErr } = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
+  if (qErr || !questions || questions.length === 0) { alert('Не удалось загрузить вопросы'); renderTestsMenu(); return; }
   const shuffled = questions.slice().sort(() => Math.random() - 0.5);
-
-  const { data: attempt, error: aErr } = await sb
-    .from('attempts')
-    .insert({ user_id: state.session.user.id, block_id: blockId, total: shuffled.length })
-    .select()
-    .single();
-
-  if (aErr) {
-    alert('Не удалось создать попытку: ' + aErr.message);
-    renderTestsMenu();
-    return;
-  }
-
+  const { data: attempt, error: aErr } = await sb.from('attempts').insert({ user_id: state.session.user.id, block_id: blockId, total: shuffled.length }).select().single();
+  if (aErr) { alert('Ошибка: ' + aErr.message); renderTestsMenu(); return; }
   state.currentBlock = block;
-  state.currentAttempt = {
-    id: attempt.id, blockId,
-    questions: shuffled, index: 0,
-    answers: [], finished: false,
-  };
+  state.currentAttempt = { id: attempt.id, blockId, questions: shuffled, index: 0, answers: [], finished: false };
   renderQuestionScreen();
 }
 
-// ============================================================
-// ЭКРАН ВОПРОСА
-// ============================================================
 function renderQuestionScreen() {
   state.screen = 'question';
   const att = state.currentAttempt;
   const q = att.questions[att.index];
-  const letters = ['а', 'б', 'в', 'г', 'д', 'е'];
+  const letters = ['а','б','в','г','д','е'];
   const pct = Math.round((att.index / att.questions.length) * 100);
   const options = Array.isArray(q.options) ? q.options : [];
 
   app.innerHTML = `
-    <div class="topbar">
-      <button class="back-btn" onclick="confirmExitTest()">←</button>
-      <div class="title">${escapeHtml(state.currentBlock.name)} · ${att.index + 1} из ${att.questions.length}</div>
-    </div>
+    <div class="topbar"><button class="back-btn" onclick="confirmExitTest()">←</button>
+      <div class="title">${escapeHtml(state.currentBlock.name)} · ${att.index + 1} из ${att.questions.length}</div></div>
     <div class="progress"><div style="width:${pct}%"></div></div>
     <div class="card">
       <div class="q-text">${att.index + 1}. ${escapeHtml(q.text)}</div>
       <div id="optionsBlock"></div>
       <div id="explainBlock"></div>
       <div id="nextBlock"></div>
-    </div>
-  `;
+    </div>`;
   window.scrollTo(0, 0);
 
-  const optsBlock = document.getElementById('optionsBlock');
+  const ob = document.getElementById('optionsBlock');
   options.forEach((text, i) => {
     const b = document.createElement('button');
     b.className = 'btn';
     b.innerHTML = `<span style="font-weight:700">${letters[i]})</span> ${escapeHtml(text)}`;
     b.onclick = () => answerQuestion(i);
-    optsBlock.appendChild(b);
+    ob.appendChild(b);
   });
 }
-
 function confirmExitTest() {
-  if (confirm('Прервать тест? Результат не сохранится как пройденный.')) {
-    if (state.currentAttempt?.id) {
-      sb.from('attempts').delete().eq('id', state.currentAttempt.id).then(() => {});
-    }
+  if (confirm('Прервать тест? Результат не сохранится.')) {
+    if (state.currentAttempt?.id) sb.from('attempts').delete().eq('id', state.currentAttempt.id).then(() => {});
     state.currentAttempt = null;
     renderTestsMenu();
   }
 }
-
-// ============================================================
-// ОТВЕТ НА ВОПРОС
-// ============================================================
-async function answerQuestion(selectedIndex) {
+async function answerQuestion(sel) {
   const att = state.currentAttempt;
   const q = att.questions[att.index];
-  const isCorrect = selectedIndex === q.correct_index;
+  const isCorrect = sel === q.correct_index;
+  await sb.from('answers').insert({ attempt_id: att.id, question_id: q.id, selected_index: sel, is_correct: isCorrect });
+  att.answers.push({ questionId: q.id, selectedIndex: sel, isCorrect });
 
-  await sb.from('answers').insert({
-    attempt_id: att.id, question_id: q.id,
-    selected_index: selectedIndex, is_correct: isCorrect,
-  });
-
-  att.answers.push({ questionId: q.id, selectedIndex, isCorrect });
-
-  const buttons = document.querySelectorAll('#optionsBlock .btn');
-  buttons.forEach((b, idx) => {
+  document.querySelectorAll('#optionsBlock .btn').forEach((b, idx) => {
     b.disabled = true;
     if (SHOW_EXPLAIN_DURING_TEST) {
       if (idx === q.correct_index) b.classList.add('correct');
-      else if (idx === selectedIndex) b.classList.add('wrong');
+      else if (idx === sel) b.classList.add('wrong');
     }
   });
-
   if (SHOW_EXPLAIN_DURING_TEST) {
-    const explain = document.getElementById('explainBlock');
-    const head = isCorrect ? '✅ Верно!' : '❌ Неверно';
-    explain.innerHTML = `<div style="background: var(--explain-bg); border-left: 4px solid var(--${isCorrect ? 'correct' : 'wrong'}); padding: 12px 14px; border-radius: 8px; margin-top: 14px;">
-      <b>${head}</b><br><br>${q.explain || ''}
-    </div>`;
+    const e = document.getElementById('explainBlock');
+    e.innerHTML = `<div style="background: var(--explain-bg); border-left: 4px solid var(--${isCorrect ? 'correct' : 'wrong'}); padding: 12px 14px; border-radius: 8px; margin-top: 14px;">
+      <b>${isCorrect ? '✅ Верно!' : '❌ Неверно'}</b><br><br>${q.explain || ''}</div>`;
   }
-
-  const next = document.getElementById('nextBlock');
-  next.innerHTML = '';
+  const n = document.getElementById('nextBlock');
+  n.innerHTML = '';
   const btn = document.createElement('button');
   btn.className = 'btn primary';
   const isLast = att.index + 1 >= att.questions.length;
   btn.textContent = isLast ? '🏁 Завершить тест' : 'Следующий вопрос →';
   btn.onclick = () => { if (isLast) finishTest(); else { att.index++; renderQuestionScreen(); } };
-  next.appendChild(btn);
+  n.appendChild(btn);
   btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
-
-// ============================================================
-// ЗАВЕРШЕНИЕ ТЕСТА
-// ============================================================
 async function finishTest() {
   const att = state.currentAttempt;
   const score = att.answers.filter(a => a.isCorrect).length;
   const total = att.questions.length;
-
-  await sb.from('attempts').update({
-    finished_at: new Date().toISOString(), score, total,
-  }).eq('id', att.id);
-
+  await sb.from('attempts').update({ finished_at: new Date().toISOString(), score, total }).eq('id', att.id);
   state.currentAttempt = { ...att, finished: true, score, total };
   renderTestResult();
 }
-
 function renderTestResult() {
   state.screen = 'testResult';
   const att = state.currentAttempt;
   const pct = Math.round((att.score / att.total) * 100);
   const grade = pct >= 90 ? 'отлично' : pct >= 75 ? 'хорошо' : pct >= 60 ? 'удовлетворительно' : 'неудовлетворительно';
-
   app.innerHTML = `
-    <div class="topbar"><button class="back-btn" onclick="closeTestResult()">←</button><div class="title">${escapeHtml(state.currentBlock.name)}</div></div>
-    <div class="card center">
-      <h2>Результат</h2>
+    <div class="topbar"><button class="back-btn" onclick="closeTestResult()">←</button>
+      <div class="title">${escapeHtml(state.currentBlock.name)}</div></div>
+    <div class="card center"><h2>Результат</h2>
       <div class="big">${att.score} / ${att.total}</div>
-      <div class="meta">${pct}% правильных · ${grade}</div>
-    </div>
+      <div class="meta">${pct}% правильных · ${grade}</div></div>
     <div class="card">
-      <div class="info-box">Правильные ответы на вопросы будет разбирать ваш руководитель.</div>
+      <div class="info-box">Разбор ошибок проведёт ваш руководитель.</div>
       <button class="btn primary" onclick="renderTestsMenu()">← К тестам</button>
       <button class="btn" onclick="renderMyResults()">📊 Все мои результаты</button>
       <button class="btn back" onclick="renderMenu()">← Главное меню</button>
-    </div>
-  `;
+    </div>`;
   window.scrollTo(0, 0);
 }
-
-function closeTestResult() {
-  state.currentAttempt = null;
-  renderTestsMenu();
-}
+function closeTestResult() { state.currentAttempt = null; renderTestsMenu(); }
 
 // ============================================================
 // МОИ РЕЗУЛЬТАТЫ
 // ============================================================
 async function renderMyResults() {
   state.screen = 'myResults';
-  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div>
-    <h1>📊 Мои результаты</h1>
-    <div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
-
-  const { data: attempts, error } = await sb
-    .from('attempts')
-    .select('*, blocks(name)')
-    .eq('user_id', state.session.user.id)
-    .not('finished_at', 'is', null)
-    .order('finished_at', { ascending: false });
-
+  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
+    <h1>📊 Мои результаты</h1><div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  const { data: attempts, error } = await sb.from('attempts').select('*, blocks(name)').eq('user_id', state.session.user.id).not('finished_at', 'is', null).order('finished_at', { ascending: false });
   if (error) {
-    app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
-      <div class="card"><div class="warn-box">Ошибка: ${escapeHtml(error.message)}</div></div>`;
+    app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><div class="card"><div class="warn-box">Ошибка: ${escapeHtml(error.message)}</div></div>`;
     return;
   }
-
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div>
-    <h1>📊 Мои результаты</h1>`;
-
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div><h1>📊 Мои результаты</h1>`;
   if (!attempts || attempts.length === 0) {
     html += `<div class="empty-state"><span class="big-emoji">📭</span>Вы ещё не проходили ни одного теста.</div>`;
   } else {
@@ -646,17 +497,326 @@ async function renderMyResults() {
     });
     html += `</tbody></table></div></div>`;
   }
-
   html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
 
 // ============================================================
-// ЗАГЛУШКИ (части 4 и 5)
+// АДМИН-ПАНЕЛЬ
 // ============================================================
-function renderAdminPanel() { app.innerHTML = '<div class="card"><div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><p>Админка — часть 4 (скоро)</p></div>'; }
-function renderChiefPanel() { app.innerHTML = '<div class="card"><div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><p>Кабинет начальника — часть 5 (скоро)</p></div>'; }
+function renderAdminPanel() {
+  state.screen = 'admin';
+  const role = state.profile?.role;
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Управление тестами</div></div><h1>⚙️ Управление тестами</h1>`;
+  html += `<div class="card">
+    <div class="block-title"><h2>📚 Блоки</h2></div>
+    <div class="meta">Создать и редактировать разделы</div>
+    <button class="btn primary" onclick="renderAdminBlocks()">Управление блоками</button>
+  </div>`;
+  html += `<div class="card">
+    <div class="block-title"><h2>❓ Вопросы</h2></div>
+    <div class="meta">Список всех вопросов</div>
+    <button class="btn" onclick="renderAdminAllQuestions()">Все вопросы</button>
+  </div>`;
+  if (role === 'admin') {
+    html += `<div class="card">
+      <div class="block-title"><h2>👥 Пользователи</h2></div>
+      <div class="meta">Роли и управление</div>
+      <button class="btn" onclick="renderAdminUsers()">Управление пользователями</button>
+    </div>`;
+  }
+  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// ============================================================
+// БЛОКИ
+// ============================================================
+async function renderAdminBlocks() {
+  state.screen = 'adminBlocks';
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  const { data: blocks } = await sb.from('blocks').select('*').order('order_index').order('created_at');
+  const { data: counts } = await sb.from('questions').select('block_id');
+  const cnt = {};
+  (counts || []).forEach(q => { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Блоки</div></div><h1>📚 Блоки</h1>
+    <div class="card"><button class="btn primary" onclick="openBlockEditor(null)">+ Добавить блок</button></div>`;
+  if (!blocks || blocks.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.</div>`;
+  } else {
+    blocks.forEach(b => {
+      const c = cnt[b.id] || 0;
+      html += `<div class="item-card">
+        <div class="block-title">
+          <div class="item-title">${escapeHtml(b.name)}</div>
+          <span class="badge">${c} вопр.</span>
+        </div>
+        ${b.description ? `<div class="item-sub">${escapeHtml(b.description)}</div>` : ''}
+        <div class="row" style="margin-top:10px">
+          <button class="btn small" onclick="renderAdminQuestions('${b.id}')">📝 Вопросы</button>
+          <button class="btn small" onclick="openBlockEditor('${b.id}')">✏️</button>
+          <button class="btn small danger" onclick="deleteBlock('${b.id}', '${escapeHtml(b.name)}')">🗑</button>
+        </div>
+      </div>`;
+    });
+  }
+  html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+async function openBlockEditor(blockId) {
+  let block = null;
+  if (blockId) {
+    const { data } = await sb.from('blocks').select('*').eq('id', blockId).single();
+    block = data;
+  }
+  showModal(`
+    <h3>${blockId ? 'Редактировать блок' : 'Новый блок'}</h3>
+    <label class="field-label">Название</label>
+    <input class="input" id="blockName" value="${escapeHtml(block?.name || '')}" placeholder="Например: Правовая подготовка">
+    <label class="field-label">Описание (необязательно)</label>
+    <input class="input" id="blockDesc" value="${escapeHtml(block?.description || '')}" placeholder="Краткое описание">
+    <label class="field-label">Порядок (число, меньше — выше)</label>
+    <input class="input" id="blockOrder" type="number" value="${block?.order_index ?? 0}">
+    <div id="blockModalError" class="warn-box hidden"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn primary" onclick="saveBlock('${blockId || ''}')">Сохранить</button>
+    </div>`);
+}
+async function saveBlock(blockId) {
+  const name = document.getElementById('blockName').value.trim();
+  const description = document.getElementById('blockDesc').value.trim();
+  const order_index = parseInt(document.getElementById('blockOrder').value) || 0;
+  const err = document.getElementById('blockModalError');
+  err.classList.add('hidden');
+  if (!name) { err.textContent = 'Название не может быть пустым'; err.classList.remove('hidden'); return; }
+  let result;
+  if (blockId) result = await sb.from('blocks').update({ name, description, order_index }).eq('id', blockId);
+  else result = await sb.from('blocks').insert({ name, description, order_index });
+  if (result.error) { err.textContent = 'Ошибка: ' + result.error.message; err.classList.remove('hidden'); return; }
+  closeModal();
+  renderAdminBlocks();
+}
+async function deleteBlock(blockId, name) {
+  if (!confirm(`Удалить блок «${name}»?\n\nВсе вопросы и попытки по нему тоже удалятся. Это необратимо.`)) return;
+  const { error } = await sb.from('blocks').delete().eq('id', blockId);
+  if (error) { alert('Ошибка: ' + error.message); return; }
+  renderAdminBlocks();
+}
+
+// ============================================================
+// ВОПРОСЫ В БЛОКЕ
+// ============================================================
+async function renderAdminQuestions(blockId) {
+  state.screen = 'adminQuestions';
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
+  state.currentBlock = block;
+  const { data: questions } = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminBlocks()">←</button><div class="title">${escapeHtml(block?.name || '')}</div></div>
+    <h1>📝 ${escapeHtml(block?.name || 'Вопросы')}</h1>
+    <div class="card"><button class="btn primary" onclick="openQuestionEditor(null)">+ Добавить вопрос</button></div>`;
+  if (!questions || questions.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>В этом блоке пока нет вопросов.</div>`;
+  } else {
+    const letters = ['а','б','в','г','д','е'];
+    questions.forEach((q, idx) => {
+      const opts = Array.isArray(q.options) ? q.options : [];
+      html += `<div class="item-card">
+        <div class="item-title">${idx + 1}. ${escapeHtml(q.text)}</div>
+        <div class="item-sub" style="margin-top:6px">
+          ${opts.map((o, i) => `<span class="badge ${i === q.correct_index ? 'ok' : ''}">${letters[i]}) ${escapeHtml(o.slice(0, 30))}${o.length > 30 ? '…' : ''}</span>`).join('')}
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn small" onclick="openQuestionEditor('${q.id}')">✏️ Изменить</button>
+          <button class="btn small danger" onclick="deleteQuestion('${q.id}')">🗑 Удалить</button>
+        </div>
+      </div>`;
+    });
+  }
+  html += `<div class="card"><button class="btn back" onclick="renderAdminBlocks()">← К блокам</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+async function openQuestionEditor(questionId) {
+  let q = null;
+  if (questionId) {
+    const { data } = await sb.from('questions').select('*').eq('id', questionId).single();
+    q = data;
+  }
+  let opts = q && Array.isArray(q.options) ? q.options.slice() : ['', '', ''];
+  while (opts.length < 2) opts.push('');
+  window.__qOptions = opts;
+  window.__qCorrectIdx = q?.correct_index ?? 0;
+
+  showModal(`
+    <h3>${questionId ? 'Редактировать вопрос' : 'Новый вопрос'}</h3>
+    <label class="field-label">Текст вопроса</label>
+    <textarea class="textarea" id="qText" placeholder="Введите текст вопроса...">${escapeHtml(q?.text || '')}</textarea>
+    <label class="field-label">Варианты ответа</label>
+    <div class="meta" style="margin-top:-4px;margin-bottom:8px">Нажмите на букву, чтобы отметить правильный вариант</div>
+    <div id="optionsContainer"></div>
+    <button class="btn small" id="addOptBtn" type="button">+ Добавить вариант</button>
+    <label class="field-label" style="margin-top:12px">Объяснение (необязательно)</label>
+    <textarea class="textarea" id="qExplain" placeholder="Почему этот ответ правильный...">${escapeHtml(q?.explain || '')}</textarea>
+    <div id="questionModalError" class="warn-box hidden"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Отмена</button>
+      <button class="btn primary" onclick="saveQuestion('${questionId || ''}')">Сохранить</button>
+    </div>`);
+
+  document.getElementById('addOptBtn').onclick = addOption;
+  renderOptionsEditor();
+}
+
+function syncOptionsFromDOM() {
+  const c = document.getElementById('optionsContainer');
+  if (!c) return;
+  const inputs = c.querySelectorAll('input.input');
+  window.__qOptions = Array.from(inputs).map(inp => inp.value);
+}
+function renderOptionsEditor() {
+  const c = document.getElementById('optionsContainer');
+  if (!c) return;
+  const letters = ['а','б','в','г','д','е','ж','з'];
+  const correct = window.__qCorrectIdx ?? 0;
+  c.innerHTML = window.__qOptions.map((opt, i) => `
+    <div class="opt-row">
+      <div class="opt-marker ${i === correct ? 'correct' : ''}" onclick="setCorrectOption(${i})" style="cursor:pointer" title="Отметить правильным">${letters[i]}</div>
+      <input class="input" value="${escapeHtml(opt)}" placeholder="Вариант ${letters[i]}">
+      ${window.__qOptions.length > 2 ? `<button class="btn del" onclick="removeOption(${i})" type="button">🗑</button>` : ''}
+    </div>`).join('');
+}
+function setCorrectOption(idx) { syncOptionsFromDOM(); window.__qCorrectIdx = idx; renderOptionsEditor(); }
+function addOption() {
+  syncOptionsFromDOM();
+  if (window.__qOptions.length >= 8) return;
+  window.__qOptions.push('');
+  renderOptionsEditor();
+}
+function removeOption(idx) {
+  syncOptionsFromDOM();
+  if (window.__qOptions.length <= 2) return;
+  window.__qOptions.splice(idx, 1);
+  if (window.__qCorrectIdx >= window.__qOptions.length) window.__qCorrectIdx = 0;
+  else if (window.__qCorrectIdx > idx) window.__qCorrectIdx--;
+  renderOptionsEditor();
+}
+
+async function saveQuestion(questionId) {
+  syncOptionsFromDOM();
+  const text = document.getElementById('qText').value.trim();
+  const explain = document.getElementById('qExplain').value.trim();
+  const err = document.getElementById('questionModalError');
+  err.classList.add('hidden');
+  const options = window.__qOptions.map(o => (o || '').trim()).filter(o => o.length > 0);
+  if (!text) { err.textContent = 'Введите текст вопроса'; err.classList.remove('hidden'); return; }
+  if (options.length < 2) { err.textContent = 'Нужно минимум 2 варианта ответа'; err.classList.remove('hidden'); return; }
+  let correct = window.__qCorrectIdx;
+  if (correct >= options.length) correct = 0;
+  const payload = { block_id: state.currentBlock.id, text, options, correct_index: correct, explain };
+  let result;
+  if (questionId) result = await sb.from('questions').update(payload).eq('id', questionId);
+  else result = await sb.from('questions').insert(payload);
+  if (result.error) { err.textContent = 'Ошибка: ' + result.error.message; err.classList.remove('hidden'); return; }
+  closeModal();
+  renderAdminQuestions(state.currentBlock.id);
+}
+async function deleteQuestion(questionId) {
+  if (!confirm('Удалить вопрос? Это необратимо.')) return;
+  const { error } = await sb.from('questions').delete().eq('id', questionId);
+  if (error) { alert('Ошибка: ' + error.message); return; }
+  renderAdminQuestions(state.currentBlock.id);
+}
+
+// ============================================================
+// ВСЕ ВОПРОСЫ
+// ============================================================
+async function renderAdminAllQuestions() {
+  state.screen = 'adminAllQ';
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  const { data: questions } = await sb.from('questions').select('*, blocks(name)').order('created_at', { ascending: false }).limit(500);
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Все вопросы</div></div><h1>❓ Все вопросы</h1>`;
+  if (!questions || questions.length === 0) {
+    html += `<div class="empty-state"><span class="big-emoji">📭</span>Нет ни одного вопроса.</div>`;
+  } else {
+    html += `<div class="meta">Всего: ${questions.length}</div>`;
+    questions.forEach(q => {
+      const opts = Array.isArray(q.options) ? q.options : [];
+      html += `<div class="item-card">
+        <div class="item-title">${escapeHtml(q.text)}</div>
+        <div class="item-sub">Блок: <b>${escapeHtml(q.blocks?.name || '—')}</b> · вариантов: ${opts.length}</div>
+      </div>`;
+    });
+  }
+  html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// ============================================================
+// ПОЛЬЗОВАТЕЛИ (только для admin)
+// ============================================================
+async function renderAdminUsers() {
+  state.screen = 'adminUsers';
+  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  const { data: users } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+  const roleLabel = r => r === 'admin' ? 'Админ' : r === 'chief' ? 'Начальник' : 'Стажёр';
+
+  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Пользователи</div></div><h1>👥 Пользователи</h1>
+    <div class="info-box">Роли: <b>admin</b> — полный доступ, <b>chief</b> — начальник, <b>cadet</b> — стажёр.</div>
+    <div class="meta">Всего: ${users?.length || 0}</div>`;
+
+  (users || []).forEach(u => {
+    const isMe = u.id === state.session.user.id;
+    html += `<div class="item-card">
+      <div class="block-title">
+        <div class="item-title">${escapeHtml(u.callsign)}${isMe ? ' <span class="badge">это вы</span>' : ''}</div>
+        <span class="badge ${u.role}">${roleLabel(u.role)}</span>
+      </div>
+      <div class="row" style="margin-top:10px;align-items:center">
+        <select class="input" style="margin:0;flex:1" onchange="changeRole('${u.id}', this.value)">
+          <option value="cadet" ${u.role === 'cadet' ? 'selected' : ''}>Стажёр</option>
+          <option value="chief" ${u.role === 'chief' ? 'selected' : ''}>Начальник</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Админ</option>
+        </select>
+        ${!isMe ? `<button class="btn small danger" style="flex:0 0 auto;min-width:100px" onclick="deleteUser('${u.id}', '${escapeHtml(u.callsign)}')">🗑 Удалить</button>` : ''}
+      </div>
+    </div>`;
+  });
+
+  html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
+  app.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+async function changeRole(userId, role) {
+  const { error } = await sb.from('profiles').update({ role }).eq('id', userId);
+  if (error) { alert('Ошибка: ' + error.message); return; }
+  if (userId === state.session.user.id) state.profile.role = role;
+  renderAdminUsers();
+}
+async function deleteUser(userId, callsign) {
+  if (!confirm(`Удалить ${callsign}?\n\nЕго профиль и все результаты удалятся.\nУчётная запись входа останется занятой — если человек вернётся, попросите администратора Supabase удалить её вручную.`)) return;
+  const { error } = await sb.from('profiles').delete().eq('id', userId);
+  if (error) { alert('Ошибка: ' + error.message); return; }
+  renderAdminUsers();
+}
+
+// ============================================================
+// ЗАГЛУШКА (часть 5)
+// ============================================================
+function renderChiefPanel() {
+  app.innerHTML = `<div class="card"><div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
+    <p>Кабинет начальника — часть 5 (скоро)</p></div>`;
+}
 
 // ============================================================
 // ГЛАВНЫЙ РЕНДЕР
@@ -671,21 +831,19 @@ function render() {
 }
 
 // ============================================================
-// ИНИЦИАЛИЗАЦИЯ
+// СТАРТ
 // ============================================================
 async function init() {
   applyTheme();
   const { data } = await sb.auth.getSession();
   if (data?.session) { state.session = data.session; await loadProfile(); }
   render();
-
   sb.auth.onAuthStateChange(async (event, session) => {
     state.session = session;
     if (session) await loadProfile(); else state.profile = null;
     render();
   });
 }
-
 init();
 </script>
 </body>
