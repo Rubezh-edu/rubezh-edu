@@ -362,7 +362,7 @@ async function doLogin() {
   err.classList.add('hidden');
   if (!c || !p) { err.textContent = 'Введите позывной и пароль'; err.classList.remove('hidden'); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Вход...';
-  try { await signIn(c, p); render(); }
+  try { await signIn(c, p); location.reload(); }
   catch (e) { err.textContent = 'Неверный позывной или пароль'; err.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Войти'; }
 }
 async function doRegister() {
@@ -376,7 +376,7 @@ async function doRegister() {
   if (p.length < 6) { err.textContent = 'Пароль минимум 6 символов'; err.classList.remove('hidden'); return; }
   if (p !== p2) { err.textContent = 'Пароли не совпадают'; err.classList.remove('hidden'); return; }
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Создание...';
-  try { await signUp(c, p); render(); }
+  try { await signUp(c, p); location.reload(); }
   catch (e) { err.textContent = e.message || 'Ошибка регистрации'; err.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Зарегистрироваться'; }
 }
 
@@ -1565,9 +1565,25 @@ async function init() {
   const restored = await tryRestoreNav();
   if (!restored) render();
   sb.auth.onAuthStateChange(async function(event, session) {
-    state.session = session;
-    if (session) await loadProfile(); else state.profile = null;
-    render();
+    // Игнорируем события, которые могут временно вернуть null
+    // во время внутренней ротации токена
+    if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+      if (session) state.session = session;
+      return;
+    }
+    if (event === 'SIGNED_OUT') {
+      state.session = null;
+      state.profile = null;
+      clearNav();
+      render();
+      return;
+    }
+    if (session) {
+      state.session = session;
+      await loadProfile();
+      render();
+    }
+    // Если session=null и событие не SIGNED_OUT — игнорируем
   });
 }
 init();
