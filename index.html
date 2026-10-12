@@ -159,7 +159,39 @@
 // ============================================================
 const SUPABASE_URL = 'https://jxcsxmzbwnxysvuhbazh.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_btY4fIAVgCY26CeB3KsreA_zHfvhip8';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Клиент с хранением сессии в localStorage и явным пробросом токена
+// в заголовке Authorization. Это обходит блокировку cookie в iOS Safari
+// на мобильном интернете.
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    storage: window.localStorage,
+    storageKey: 'rubezh_auth_token',
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    flowType: 'implicit',
+  },
+  global: {
+    fetch: async (url, options = {}) => {
+      const headers = new Headers(options.headers || {});
+      try {
+        const stored = localStorage.getItem('rubezh_auth_token');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.access_token) {
+            headers.set('Authorization', 'Bearer ' + parsed.access_token);
+          }
+        }
+      } catch (e) {}
+      return fetch(url, {
+        ...options,
+        headers,
+        credentials: 'omit',
+      });
+    },
+  },
+});
 
 const SHOW_EXPLAIN_DURING_TEST = false;
 
@@ -185,11 +217,11 @@ function saveNav() {
   try {
     const nav = {
       screen: state.screen,
-      blockId: state.currentBlock?.id || null,
-      attemptId: state.currentAttempt?.id || null,
-      index: state.currentAttempt?.index || 0,
-      questionIds: state.currentAttempt?.questions?.map(q => q.id) || null,
-      userId: window.__currentCadet?.user?.id || null,
+      blockId: state.currentBlock && state.currentBlock.id ? state.currentBlock.id : null,
+      attemptId: state.currentAttempt && state.currentAttempt.id ? state.currentAttempt.id : null,
+      index: state.currentAttempt && state.currentAttempt.index ? state.currentAttempt.index : 0,
+      questionIds: state.currentAttempt && state.currentAttempt.questions ? state.currentAttempt.questions.map(function(q){return q.id;}) : null,
+      userId: window.__currentCadet && window.__currentCadet.user ? window.__currentCadet.user.id : null,
       viewAttemptId: window.__viewAttemptId || null,
       ts: Date.now(),
     };
@@ -202,7 +234,7 @@ function clearNav() {
 }
 
 window.addEventListener('beforeunload', saveNav);
-document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', function() {
   if (document.hidden) saveNav();
 });
 
@@ -210,7 +242,9 @@ document.addEventListener('visibilitychange', () => {
 // УТИЛИТЫ
 // ============================================================
 function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
 }
 const TRANSLIT = {'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',' ':'','_':'','-':''};
 function callsignToEmail(c) {
@@ -231,16 +265,13 @@ function fmtDate(iso) {
 }
 const app = document.getElementById('app');
 
-// ============================================================
-// МОДАЛКИ
-// ============================================================
 function showModal(html) {
   closeModal();
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.id = 'modalOverlay';
-  ov.onclick = (e) => { if (e.target === ov) closeModal(); };
-  ov.innerHTML = `<div class="modal">${html}</div>`;
+  ov.onclick = function(e) { if (e.target === ov) closeModal(); };
+  ov.innerHTML = '<div class="modal">' + html + '</div>';
   document.body.appendChild(ov);
 }
 function closeModal() { const ov = document.getElementById('modalOverlay'); if (ov) ov.remove(); }
@@ -250,22 +281,24 @@ function closeModal() { const ov = document.getElementById('modalOverlay'); if (
 // ============================================================
 async function loadProfile() {
   if (!state.session) { state.profile = null; return; }
-  const { data, error } = await sb.from('profiles').select('*').eq('id', state.session.user.id).single();
-  if (error) { console.error(error); state.profile = null; return; }
-  state.profile = data;
+  const res = await sb.from('profiles').select('*').eq('id', state.session.user.id).single();
+  if (res.error) { console.error(res.error); state.profile = null; return; }
+  state.profile = res.data;
 }
 async function signUp(callsign, password) {
   const email = callsignToEmail(callsign);
-  const { data, error } = await sb.auth.signUp({ email, password, options: { data: { callsign } } });
-  if (error) throw error;
-  if (!data.session) throw new Error('Аккаунт создан, но вход не выполнен.');
-  state.session = data.session; await loadProfile();
+  const res = await sb.auth.signUp({ email: email, password: password, options: { data: { callsign: callsign } } });
+  if (res.error) throw res.error;
+  if (!res.data.session) throw new Error('Аккаунт создан, но вход не выполнен.');
+  state.session = res.data.session;
+  await loadProfile();
 }
 async function signIn(callsign, password) {
   const email = callsignToEmail(callsign);
-  const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  state.session = data.session; await loadProfile();
+  const res = await sb.auth.signInWithPassword({ email: email, password: password });
+  if (res.error) throw res.error;
+  state.session = res.data.session;
+  await loadProfile();
 }
 async function signOut() {
   await sb.auth.signOut();
@@ -279,17 +312,17 @@ async function signOut() {
 // ============================================================
 function renderAuth() {
   state.screen = 'auth';
-  app.innerHTML = `
-    <div class="menu-header"><h1>🎯 Рубеж</h1>
-      <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button></div>
-    <div class="card"><p class="meta" style="text-align:center;margin:0">Система тестирования стажёров</p></div>
-    <div class="card">
-      <div class="auth-tabs">
-        <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Вход</button>
-        <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">Регистрация</button>
-      </div>
-      <div id="authForm"></div>
-    </div>`;
+  app.innerHTML =
+    '<div class="menu-header"><h1>🎯 Рубеж</h1>' +
+      '<button class="theme-btn" onclick="toggleTheme()">' + (state.theme === 'light' ? '🌙' : '☀️') + '</button></div>' +
+    '<div class="card"><p class="meta" style="text-align:center;margin:0">Система тестирования стажёров</p></div>' +
+    '<div class="card">' +
+      '<div class="auth-tabs">' +
+        '<button class="auth-tab active" id="tabLogin" onclick="switchAuthTab(\'login\')">Вход</button>' +
+        '<button class="auth-tab" id="tabRegister" onclick="switchAuthTab(\'register\')">Регистрация</button>' +
+      '</div>' +
+      '<div id="authForm"></div>' +
+    '</div>';
   renderAuthForm('login');
 }
 function switchAuthTab(tab) {
@@ -300,25 +333,25 @@ function switchAuthTab(tab) {
 function renderAuthForm(tab) {
   const form = document.getElementById('authForm');
   if (tab === 'login') {
-    form.innerHTML = `
-      <label class="field-label">Позывной</label>
-      <input class="input" id="loginCallsign" placeholder="Например: Гром" autocapitalize="words">
-      <label class="field-label">Пароль</label>
-      <input class="input" id="loginPassword" type="password" placeholder="Пароль">
-      <div id="loginError" class="warn-box hidden"></div>
-      <button class="btn primary" id="loginBtn" onclick="doLogin()">Войти</button>`;
+    form.innerHTML =
+      '<label class="field-label">Позывной</label>' +
+      '<input class="input" id="loginCallsign" placeholder="Например: Гром" autocapitalize="words">' +
+      '<label class="field-label">Пароль</label>' +
+      '<input class="input" id="loginPassword" type="password" placeholder="Пароль">' +
+      '<div id="loginError" class="warn-box hidden"></div>' +
+      '<button class="btn primary" id="loginBtn" onclick="doLogin()">Войти</button>';
   } else {
-    form.innerHTML = `
-      <label class="field-label">Позывной</label>
-      <input class="input" id="regCallsign" placeholder="Придумайте позывной (без ФИО!)" autocapitalize="words">
-      <div class="meta" style="margin:-4px 0 8px">Не используйте фамилию, имя, отчество</div>
-      <label class="field-label">Пароль</label>
-      <input class="input" id="regPassword" type="password" placeholder="Минимум 6 символов">
-      <label class="field-label">Пароль ещё раз</label>
-      <input class="input" id="regPassword2" type="password" placeholder="Повторите пароль">
-      <div class="info-box">Регистрируясь, вы соглашаетесь на обработку позывного и результатов в целях подготовки.</div>
-      <div id="regError" class="warn-box hidden"></div>
-      <button class="btn primary" id="regBtn" onclick="doRegister()">Зарегистрироваться</button>`;
+    form.innerHTML =
+      '<label class="field-label">Позывной</label>' +
+      '<input class="input" id="regCallsign" placeholder="Придумайте позывной (без ФИО!)" autocapitalize="words">' +
+      '<div class="meta" style="margin:-4px 0 8px">Не используйте фамилию, имя, отчество</div>' +
+      '<label class="field-label">Пароль</label>' +
+      '<input class="input" id="regPassword" type="password" placeholder="Минимум 6 символов">' +
+      '<label class="field-label">Пароль ещё раз</label>' +
+      '<input class="input" id="regPassword2" type="password" placeholder="Повторите пароль">' +
+      '<div class="info-box">Регистрируясь, вы соглашаетесь на обработку позывного и результатов в целях подготовки.</div>' +
+      '<div id="regError" class="warn-box hidden"></div>' +
+      '<button class="btn primary" id="regBtn" onclick="doRegister()">Зарегистрироваться</button>';
   }
 }
 async function doLogin() {
@@ -352,41 +385,36 @@ async function doRegister() {
 // ============================================================
 function renderMenu() {
   state.screen = 'menu';
-  const role = state.profile?.role || 'cadet';
+  const role = state.profile && state.profile.role ? state.profile.role : 'cadet';
   const roleLabel = role === 'admin' ? 'Администратор' : role === 'chief' ? 'Начальник' : 'Стажёр';
-  let html = `
-    <div class="menu-header">
-      <h1>🎯 Рубеж</h1>
-      <div class="header-right">
-        <span class="user-badge"><b>${escapeHtml(state.profile?.callsign || '')}</b> · ${roleLabel}</span>
-        <button class="theme-btn" onclick="toggleTheme()">${state.theme === 'light' ? '🌙' : '☀️'}</button>
-      </div>
-    </div>`;
-  html += `<div class="card">
-    <div class="block-title"><h2>📚 Тесты</h2></div>
-    <div class="meta">Прохождение тестов по блокам</div>
-    <button class="btn primary" onclick="renderTestsMenu()">Открыть</button>
-  </div>`;
-  html += `<div class="card">
-    <div class="block-title"><h2>📊 Мои результаты</h2></div>
-    <div class="meta">История ваших попыток</div>
-    <button class="btn" onclick="renderMyResults()">Открыть</button>
-  </div>`;
+  let html =
+    '<div class="menu-header">' +
+      '<h1>🎯 Рубеж</h1>' +
+      '<div class="header-right">' +
+        '<span class="user-badge"><b>' + escapeHtml(state.profile && state.profile.callsign ? state.profile.callsign : '') + '</b> · ' + roleLabel + '</span>' +
+        '<button class="theme-btn" onclick="toggleTheme()">' + (state.theme === 'light' ? '🌙' : '☀️') + '</button>' +
+      '</div>' +
+    '</div>';
+
+  html += '<div class="card"><div class="block-title"><h2>📚 Тесты</h2></div>' +
+    '<div class="meta">Прохождение тестов по блокам</div>' +
+    '<button class="btn primary" onclick="renderTestsMenu()">Открыть</button></div>';
+
+  html += '<div class="card"><div class="block-title"><h2>📊 Мои результаты</h2></div>' +
+    '<div class="meta">История ваших попыток</div>' +
+    '<button class="btn" onclick="renderMyResults()">Открыть</button></div>';
+
   if (role === 'admin' || role === 'chief') {
-    html += `<div class="card">
-      <div class="block-title"><h2>⚙️ Управление тестами</h2></div>
-      <div class="meta">Блоки и вопросы</div>
-      <button class="btn primary" onclick="renderAdminPanel()">Открыть</button>
-    </div>`;
+    html += '<div class="card"><div class="block-title"><h2>⚙️ Управление тестами</h2></div>' +
+      '<div class="meta">Блоки и вопросы</div>' +
+      '<button class="btn primary" onclick="renderAdminPanel()">Открыть</button></div>';
   }
   if (role === 'chief' || role === 'admin') {
-    html += `<div class="card">
-      <div class="block-title"><h2>👁 Результаты стажёров</h2></div>
-      <div class="meta">Полная статистика и разбор ошибок</div>
-      <button class="btn primary" onclick="renderChiefPanel()">Открыть</button>
-    </div>`;
+    html += '<div class="card"><div class="block-title"><h2>👁 Результаты стажёров</h2></div>' +
+      '<div class="meta">Полная статистика и разбор ошибок</div>' +
+      '<button class="btn primary" onclick="renderChiefPanel()">Открыть</button></div>';
   }
-  html += `<div class="card"><button class="btn back" onclick="doSignOut()">Выйти из аккаунта</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="doSignOut()">Выйти из аккаунта</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -397,43 +425,44 @@ async function doSignOut() { if (!confirm('Выйти из аккаунта?')) 
 // ============================================================
 async function renderTestsMenu() {
   state.screen = 'testsMenu';
-  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>
-    <h1>📚 Тесты</h1><div class="empty-state"><span class="spinner"></span>Загрузка блоков...</div>`;
-  const { data: blocks, error } = await sb.from('blocks').select('*').order('order_index').order('created_at');
-  if (error) {
-    app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
-      <div class="card"><div class="warn-box">Ошибка: ${escapeHtml(error.message)}</div></div>`;
+  app.innerHTML = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div>' +
+    '<h1>📚 Тесты</h1><div class="empty-state"><span class="spinner"></span>Загрузка блоков...</div>';
+  const res = await sb.from('blocks').select('*').order('order_index').order('created_at');
+  if (res.error) {
+    app.innerHTML = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>' +
+      '<div class="card"><div class="warn-box">Ошибка: ' + escapeHtml(res.error.message) + '</div></div>';
     return;
   }
-  const { data: counts } = await sb.from('questions').select('block_id');
+  const blocks = res.data || [];
+  const countsRes = await sb.from('questions').select('block_id');
   const cnt = {};
-  (counts || []).forEach(q => { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div><h1>📚 Тесты</h1>`;
-  if (!blocks || blocks.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.</div>`;
+  (countsRes.data || []).forEach(function(q) { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Тесты</div></div><h1>📚 Тесты</h1>';
+  if (!blocks.length) {
+    html += '<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.</div>';
   } else {
-    blocks.forEach(b => {
+    blocks.forEach(function(b) {
       const c = cnt[b.id] || 0;
-      html += `<div class="item-card ${c > 0 ? 'clickable' : ''}" ${c > 0 ? `onclick="startTest('${b.id}')"` : ''}>
-        <div class="item-title">${escapeHtml(b.name)}</div>
-        <div class="item-sub">${b.description ? escapeHtml(b.description) + ' · ' : ''}${c} ${c === 1 ? 'вопрос' : c < 5 && c > 0 ? 'вопроса' : 'вопросов'}${c === 0 ? ' · пока пусто' : ''}</div>
-      </div>`;
+      html += '<div class="item-card ' + (c > 0 ? 'clickable' : '') + '" ' + (c > 0 ? 'onclick="startTest(\'' + b.id + '\')"' : '') + '>' +
+        '<div class="item-title">' + escapeHtml(b.name) + '</div>' +
+        '<div class="item-sub">' + (b.description ? escapeHtml(b.description) + ' · ' : '') +
+        c + ' ' + (c === 1 ? 'вопрос' : (c < 5 && c > 0 ? 'вопроса' : 'вопросов')) + (c === 0 ? ' · пока пусто' : '') + '</div></div>';
     });
   }
-  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
 async function startTest(blockId) {
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Подготовка...</div>`;
-  const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
-  const { data: questions, error: qErr } = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
-  if (qErr || !questions || questions.length === 0) { alert('Не удалось загрузить вопросы'); renderTestsMenu(); return; }
-  const shuffled = questions.slice().sort(() => Math.random() - 0.5);
-  const { data: attempt, error: aErr } = await sb.from('attempts').insert({ user_id: state.session.user.id, block_id: blockId, total: shuffled.length }).select().single();
-  if (aErr) { alert('Ошибка: ' + aErr.message); renderTestsMenu(); return; }
-  state.currentBlock = block;
-  state.currentAttempt = { id: attempt.id, blockId, questions: shuffled, index: 0, answers: [], finished: false };
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Подготовка...</div>';
+  const bRes = await sb.from('blocks').select('*').eq('id', blockId).single();
+  const qRes = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
+  if (qRes.error || !qRes.data || !qRes.data.length) { alert('Не удалось загрузить вопросы'); renderTestsMenu(); return; }
+  const shuffled = qRes.data.slice().sort(function() { return Math.random() - 0.5; });
+  const aRes = await sb.from('attempts').insert({ user_id: state.session.user.id, block_id: blockId, total: shuffled.length }).select().single();
+  if (aRes.error) { alert('Ошибка: ' + aRes.error.message); renderTestsMenu(); return; }
+  state.currentBlock = bRes.data;
+  state.currentAttempt = { id: aRes.data.id, blockId: blockId, questions: shuffled, index: 0, answers: [], finished: false };
   renderQuestionScreen();
 }
 function renderQuestionScreen() {
@@ -443,29 +472,29 @@ function renderQuestionScreen() {
   const letters = ['а','б','в','г','д','е'];
   const pct = Math.round((att.index / att.questions.length) * 100);
   const options = Array.isArray(q.options) ? q.options : [];
-  app.innerHTML = `
-    <div class="topbar"><button class="back-btn" onclick="confirmExitTest()">←</button>
-      <div class="title">${escapeHtml(state.currentBlock.name)} · ${att.index + 1} из ${att.questions.length}</div></div>
-    <div class="progress"><div style="width:${pct}%"></div></div>
-    <div class="card">
-      <div class="q-text">${att.index + 1}. ${escapeHtml(q.text)}</div>
-      <div id="optionsBlock"></div>
-      <div id="explainBlock"></div>
-      <div id="nextBlock"></div>
-    </div>`;
+  app.innerHTML =
+    '<div class="topbar"><button class="back-btn" onclick="confirmExitTest()">←</button>' +
+      '<div class="title">' + escapeHtml(state.currentBlock.name) + ' · ' + (att.index + 1) + ' из ' + att.questions.length + '</div></div>' +
+    '<div class="progress"><div style="width:' + pct + '%"></div></div>' +
+    '<div class="card">' +
+      '<div class="q-text">' + (att.index + 1) + '. ' + escapeHtml(q.text) + '</div>' +
+      '<div id="optionsBlock"></div>' +
+      '<div id="explainBlock"></div>' +
+      '<div id="nextBlock"></div>' +
+    '</div>';
   window.scrollTo(0, 0);
   const ob = document.getElementById('optionsBlock');
-  options.forEach((text, i) => {
+  options.forEach(function(text, i) {
     const b = document.createElement('button');
     b.className = 'btn';
-    b.innerHTML = `<span style="font-weight:700">${letters[i]})</span> ${escapeHtml(text)}`;
-    b.onclick = () => answerQuestion(i);
+    b.innerHTML = '<span style="font-weight:700">' + letters[i] + ')</span> ' + escapeHtml(text);
+    b.onclick = function() { answerQuestion(i); };
     ob.appendChild(b);
   });
 }
 function confirmExitTest() {
   if (confirm('Прервать тест? Результат не сохранится.')) {
-    if (state.currentAttempt?.id) sb.from('attempts').delete().eq('id', state.currentAttempt.id).then(() => {});
+    if (state.currentAttempt && state.currentAttempt.id) sb.from('attempts').delete().eq('id', state.currentAttempt.id).then(function(){});
     state.currentAttempt = null;
     clearNav();
     renderTestsMenu();
@@ -478,10 +507,10 @@ async function answerQuestion(sel, skipSave) {
   if (!skipSave) {
     await sb.from('answers').insert({ attempt_id: att.id, question_id: q.id, selected_index: sel, is_correct: isCorrect });
   }
-  if (!att.answers.find(a => a.questionId === q.id)) {
-    att.answers.push({ questionId: q.id, selectedIndex: sel, isCorrect });
+  if (!att.answers.find(function(a){return a.questionId === q.id;})) {
+    att.answers.push({ questionId: q.id, selectedIndex: sel, isCorrect: isCorrect });
   }
-  document.querySelectorAll('#optionsBlock .btn').forEach((b, idx) => {
+  document.querySelectorAll('#optionsBlock .btn').forEach(function(b, idx) {
     b.disabled = true;
     if (SHOW_EXPLAIN_DURING_TEST) {
       if (idx === q.correct_index) b.classList.add('correct');
@@ -490,8 +519,8 @@ async function answerQuestion(sel, skipSave) {
   });
   if (SHOW_EXPLAIN_DURING_TEST) {
     const e = document.getElementById('explainBlock');
-    e.innerHTML = `<div style="background: var(--explain-bg); border-left: 4px solid var(--${isCorrect ? 'correct' : 'wrong'}); padding: 12px 14px; border-radius: 8px; margin-top: 14px;">
-      <b>${isCorrect ? '✅ Верно!' : '❌ Неверно'}</b><br><br>${q.explain || ''}</div>`;
+    e.innerHTML = '<div style="background: var(--explain-bg); border-left: 4px solid var(--' + (isCorrect ? 'correct' : 'wrong') + '); padding: 12px 14px; border-radius: 8px; margin-top: 14px;">' +
+      '<b>' + (isCorrect ? '✅ Верно!' : '❌ Неверно') + '</b><br><br>' + (q.explain || '') + '</div>';
   }
   const n = document.getElementById('nextBlock');
   n.innerHTML = '';
@@ -499,16 +528,16 @@ async function answerQuestion(sel, skipSave) {
   btn.className = 'btn primary';
   const isLast = att.index + 1 >= att.questions.length;
   btn.textContent = isLast ? '🏁 Завершить тест' : 'Следующий вопрос →';
-  btn.onclick = () => { if (isLast) finishTest(); else { att.index++; renderQuestionScreen(); } };
+  btn.onclick = function() { if (isLast) finishTest(); else { att.index++; renderQuestionScreen(); } };
   n.appendChild(btn);
   btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 async function finishTest() {
   const att = state.currentAttempt;
-  const score = att.answers.filter(a => a.isCorrect).length;
+  const score = att.answers.filter(function(a){return a.isCorrect;}).length;
   const total = att.questions.length;
-  await sb.from('attempts').update({ finished_at: new Date().toISOString(), score, total }).eq('id', att.id);
-  state.currentAttempt = { ...att, finished: true, score, total };
+  await sb.from('attempts').update({ finished_at: new Date().toISOString(), score: score, total: total }).eq('id', att.id);
+  state.currentAttempt = Object.assign({}, att, { finished: true, score: score, total: total });
   clearNav();
   renderTestResult();
 }
@@ -517,18 +546,18 @@ function renderTestResult() {
   const att = state.currentAttempt;
   const pct = Math.round((att.score / att.total) * 100);
   const grade = pct >= 90 ? 'отлично' : pct >= 75 ? 'хорошо' : pct >= 60 ? 'удовлетворительно' : 'неудовлетворительно';
-  app.innerHTML = `
-    <div class="topbar"><button class="back-btn" onclick="closeTestResult()">←</button>
-      <div class="title">${escapeHtml(state.currentBlock.name)}</div></div>
-    <div class="card center"><h2>Результат</h2>
-      <div class="big">${att.score} / ${att.total}</div>
-      <div class="meta">${pct}% правильных · ${grade}</div></div>
-    <div class="card">
-      <div class="info-box">Разбор ошибок проведёт ваш руководитель.</div>
-      <button class="btn primary" onclick="renderTestsMenu()">← К тестам</button>
-      <button class="btn" onclick="renderMyResults()">📊 Все мои результаты</button>
-      <button class="btn back" onclick="renderMenu()">← Главное меню</button>
-    </div>`;
+  app.innerHTML =
+    '<div class="topbar"><button class="back-btn" onclick="closeTestResult()">←</button>' +
+      '<div class="title">' + escapeHtml(state.currentBlock.name) + '</div></div>' +
+    '<div class="card center"><h2>Результат</h2>' +
+      '<div class="big">' + att.score + ' / ' + att.total + '</div>' +
+      '<div class="meta">' + pct + '% правильных · ' + grade + '</div></div>' +
+    '<div class="card">' +
+      '<div class="info-box">Разбор ошибок проведёт ваш руководитель.</div>' +
+      '<button class="btn primary" onclick="renderTestsMenu()">← К тестам</button>' +
+      '<button class="btn" onclick="renderMyResults()">📊 Все мои результаты</button>' +
+      '<button class="btn back" onclick="renderMenu()">← Главное меню</button>' +
+    '</div>';
   window.scrollTo(0, 0);
 }
 function closeTestResult() { state.currentAttempt = null; clearNav(); renderTestsMenu(); }
@@ -538,26 +567,27 @@ function closeTestResult() { state.currentAttempt = null; clearNav(); renderTest
 // ============================================================
 async function renderMyResults() {
   state.screen = 'myResults';
-  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>
-    <h1>📊 Мои результаты</h1><div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
-  const { data: attempts, error } = await sb.from('attempts').select('*, blocks(name)').eq('user_id', state.session.user.id).not('finished_at', 'is', null).order('finished_at', { ascending: false });
-  if (error) {
-    app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><div class="card"><div class="warn-box">Ошибка: ${escapeHtml(error.message)}</div></div>`;
+  app.innerHTML = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div>' +
+    '<h1>📊 Мои результаты</h1><div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
+  const res = await sb.from('attempts').select('*, blocks(name)').eq('user_id', state.session.user.id).not('finished_at', 'is', null).order('finished_at', { ascending: false });
+  if (res.error) {
+    app.innerHTML = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button></div><div class="card"><div class="warn-box">Ошибка: ' + escapeHtml(res.error.message) + '</div></div>';
     return;
   }
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div><h1>📊 Мои результаты</h1>`;
-  if (!attempts || attempts.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>Вы ещё не проходили ни одного теста.</div>`;
+  const attempts = res.data || [];
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Мои результаты</div></div><h1>📊 Мои результаты</h1>';
+  if (!attempts.length) {
+    html += '<div class="empty-state"><span class="big-emoji">📭</span>Вы ещё не проходили ни одного теста.</div>';
   } else {
-    html += `<div class="card"><div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>`;
-    attempts.forEach(a => {
+    html += '<div class="card"><div class="table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>';
+    attempts.forEach(function(a) {
       const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-      html += `<tr><td>${fmtDate(a.finished_at)}</td><td>${escapeHtml(a.blocks?.name || '—')}</td><td class="num">${a.score} / ${a.total}</td><td class="num">${pct}%</td></tr>`;
+      html += '<tr><td>' + fmtDate(a.finished_at) + '</td><td>' + escapeHtml(a.blocks ? a.blocks.name : '—') + '</td><td class="num">' + a.score + ' / ' + a.total + '</td><td class="num">' + pct + '%</td></tr>';
     });
-    html += `</tbody></table></div></div>`;
+    html += '</tbody></table></div></div>';
   }
-  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -567,20 +597,20 @@ async function renderMyResults() {
 // ============================================================
 function renderAdminPanel() {
   state.screen = 'admin';
-  const role = state.profile?.role;
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Управление тестами</div></div><h1>⚙️ Управление тестами</h1>`;
-  html += `<div class="card"><div class="block-title"><h2>📚 Блоки</h2></div>
-    <div class="meta">Создать и редактировать разделы</div>
-    <button class="btn primary" onclick="renderAdminBlocks()">Управление блоками</button></div>`;
-  html += `<div class="card"><div class="block-title"><h2>❓ Вопросы</h2></div>
-    <div class="meta">Список всех вопросов</div>
-    <button class="btn" onclick="renderAdminAllQuestions()">Все вопросы</button></div>`;
+  const role = state.profile ? state.profile.role : 'cadet';
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Управление тестами</div></div><h1>⚙️ Управление тестами</h1>';
+  html += '<div class="card"><div class="block-title"><h2>📚 Блоки</h2></div>' +
+    '<div class="meta">Создать и редактировать разделы</div>' +
+    '<button class="btn primary" onclick="renderAdminBlocks()">Управление блоками</button></div>';
+  html += '<div class="card"><div class="block-title"><h2>❓ Вопросы</h2></div>' +
+    '<div class="meta">Список всех вопросов</div>' +
+    '<button class="btn" onclick="renderAdminAllQuestions()">Все вопросы</button></div>';
   if (role === 'admin') {
-    html += `<div class="card"><div class="block-title"><h2>👥 Пользователи</h2></div>
-      <div class="meta">Роли и управление</div>
-      <button class="btn" onclick="renderAdminUsers()">Управление пользователями</button></div>`;
+    html += '<div class="card"><div class="block-title"><h2>👥 Пользователи</h2></div>' +
+      '<div class="meta">Роли и управление</div>' +
+      '<button class="btn" onclick="renderAdminUsers()">Управление пользователями</button></div>';
   }
-  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -590,55 +620,57 @@ function renderAdminPanel() {
 // ============================================================
 async function renderAdminBlocks() {
   state.screen = 'adminBlocks';
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
-  const { data: blocks } = await sb.from('blocks').select('*').order('order_index').order('created_at');
-  const { data: counts } = await sb.from('questions').select('block_id');
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
+  const bRes = await sb.from('blocks').select('*').order('order_index').order('created_at');
+  const cRes = await sb.from('questions').select('block_id');
+  const blocks = bRes.data || [];
   const cnt = {};
-  (counts || []).forEach(q => { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Блоки</div></div><h1>📚 Блоки</h1>
-    <div class="card"><button class="btn primary" onclick="openBlockEditor(null)">+ Добавить блок</button></div>`;
-  if (!blocks || blocks.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.</div>`;
+  (cRes.data || []).forEach(function(q) { cnt[q.block_id] = (cnt[q.block_id] || 0) + 1; });
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Блоки</div></div><h1>📚 Блоки</h1>' +
+    '<div class="card"><button class="btn primary" onclick="openBlockEditor(null)">+ Добавить блок</button></div>';
+  if (!blocks.length) {
+    html += '<div class="empty-state"><span class="big-emoji">📭</span>Пока нет ни одного блока.</div>';
   } else {
-    blocks.forEach(b => {
+    blocks.forEach(function(b) {
       const c = cnt[b.id] || 0;
-      html += `<div class="item-card">
-        <div class="block-title">
-          <div class="item-title">${escapeHtml(b.name)}</div>
-          <span class="badge">${c} вопр.</span>
-        </div>
-        ${b.description ? `<div class="item-sub">${escapeHtml(b.description)}</div>` : ''}
-        <div class="row" style="margin-top:10px">
-          <button class="btn small" onclick="renderAdminQuestions('${b.id}')">📝 Вопросы</button>
-          <button class="btn small" onclick="openBlockEditor('${b.id}')">✏️</button>
-          <button class="btn small danger" onclick="deleteBlock('${b.id}', '${escapeHtml(b.name)}')">🗑</button>
-        </div>
-      </div>`;
+      html += '<div class="item-card">' +
+        '<div class="block-title"><div class="item-title">' + escapeHtml(b.name) + '</div>' +
+        '<span class="badge">' + c + ' вопр.</span></div>' +
+        (b.description ? '<div class="item-sub">' + escapeHtml(b.description) + '</div>' : '') +
+        '<div class="row" style="margin-top:10px">' +
+          '<button class="btn small" onclick="renderAdminQuestions(\'' + b.id + '\')">📝 Вопросы</button>' +
+          '<button class="btn small" onclick="openBlockEditor(\'' + b.id + '\')">✏️</button>' +
+          '<button class="btn small danger" onclick="deleteBlock(\'' + b.id + '\', \'' + escapeHtml(b.name).replace(/'/g, "\\'") + '\')">🗑</button>' +
+        '</div></div>';
     });
   }
-  html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
 async function openBlockEditor(blockId) {
   let block = null;
   if (blockId) {
-    const { data } = await sb.from('blocks').select('*').eq('id', blockId).single();
-    block = data;
+    const res = await sb.from('blocks').select('*').eq('id', blockId).single();
+    block = res.data;
   }
-  showModal(`
-    <h3>${blockId ? 'Редактировать блок' : 'Новый блок'}</h3>
-    <label class="field-label">Название</label>
-    <input class="input" id="blockName" value="${escapeHtml(block?.name || '')}" placeholder="Например: Правовая подготовка">
-    <label class="field-label">Описание (необязательно)</label>
-    <input class="input" id="blockDesc" value="${escapeHtml(block?.description || '')}" placeholder="Краткое описание">
-    <label class="field-label">Порядок (число, меньше — выше)</label>
-    <input class="input" id="blockOrder" type="number" value="${block?.order_index ?? 0}">
-    <div id="blockModalError" class="warn-box hidden"></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">Отмена</button>
-      <button class="btn primary" onclick="saveBlock('${blockId || ''}')">Сохранить</button>
-    </div>`);
+  const name = block ? block.name : '';
+  const desc = block ? block.description : '';
+  const order = block ? block.order_index : 0;
+  showModal(
+    '<h3>' + (blockId ? 'Редактировать блок' : 'Новый блок') + '</h3>' +
+    '<label class="field-label">Название</label>' +
+    '<input class="input" id="blockName" value="' + escapeHtml(name) + '" placeholder="Например: Правовая подготовка">' +
+    '<label class="field-label">Описание (необязательно)</label>' +
+    '<input class="input" id="blockDesc" value="' + escapeHtml(desc) + '" placeholder="Краткое описание">' +
+    '<label class="field-label">Порядок (число, меньше — выше)</label>' +
+    '<input class="input" id="blockOrder" type="number" value="' + order + '">' +
+    '<div id="blockModalError" class="warn-box hidden"></div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn" onclick="closeModal()">Отмена</button>' +
+      '<button class="btn primary" onclick="saveBlock(\'' + (blockId || '') + '\')">Сохранить</button>' +
+    '</div>'
+  );
 }
 async function saveBlock(blockId) {
   const name = document.getElementById('blockName').value.trim();
@@ -648,16 +680,16 @@ async function saveBlock(blockId) {
   err.classList.add('hidden');
   if (!name) { err.textContent = 'Название не может быть пустым'; err.classList.remove('hidden'); return; }
   let result;
-  if (blockId) result = await sb.from('blocks').update({ name, description, order_index }).eq('id', blockId);
-  else result = await sb.from('blocks').insert({ name, description, order_index });
+  if (blockId) result = await sb.from('blocks').update({ name: name, description: description, order_index: order_index }).eq('id', blockId);
+  else result = await sb.from('blocks').insert({ name: name, description: description, order_index: order_index });
   if (result.error) { err.textContent = 'Ошибка: ' + result.error.message; err.classList.remove('hidden'); return; }
   closeModal();
   renderAdminBlocks();
 }
 async function deleteBlock(blockId, name) {
-  if (!confirm(`Удалить блок «${name}»?\n\nВсе вопросы и попытки по нему тоже удалятся. Это необратимо.`)) return;
-  const { error } = await sb.from('blocks').delete().eq('id', blockId);
-  if (error) { alert('Ошибка: ' + error.message); return; }
+  if (!confirm('Удалить блок «' + name + '»?\n\nВсе вопросы и попытки по нему тоже удалятся. Это необратимо.')) return;
+  const res = await sb.from('blocks').delete().eq('id', blockId);
+  if (res.error) { alert('Ошибка: ' + res.error.message); return; }
   renderAdminBlocks();
 }
 
@@ -666,64 +698,70 @@ async function deleteBlock(blockId, name) {
 // ============================================================
 async function renderAdminQuestions(blockId) {
   state.screen = 'adminQuestions';
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
-  const { data: block } = await sb.from('blocks').select('*').eq('id', blockId).single();
-  state.currentBlock = block;
-  const { data: questions } = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminBlocks()">←</button><div class="title">${escapeHtml(block?.name || '')}</div></div>
-    <h1>📝 ${escapeHtml(block?.name || 'Вопросы')}</h1>
-    <div class="card">
-      <button class="btn primary" onclick="openQuestionEditor(null)">+ Добавить вопрос</button>
-      <button class="btn" onclick="openImportModal()">📥 Импорт из CSV/Excel</button>
-      <button class="btn" onclick="downloadTemplate()">📄 Скачать шаблон CSV</button>
-    </div>`;
-  if (!questions || questions.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>В этом блоке пока нет вопросов.</div>`;
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
+  const bRes = await sb.from('blocks').select('*').eq('id', blockId).single();
+  state.currentBlock = bRes.data;
+  const qRes = await sb.from('questions').select('*').eq('block_id', blockId).order('order_index').order('created_at');
+  const questions = qRes.data || [];
+  const blockName = state.currentBlock ? state.currentBlock.name : '';
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderAdminBlocks()">←</button><div class="title">' + escapeHtml(blockName) + '</div></div>' +
+    '<h1>📝 ' + escapeHtml(blockName) + '</h1>' +
+    '<div class="card">' +
+      '<button class="btn primary" onclick="openQuestionEditor(null)">+ Добавить вопрос</button>' +
+      '<button class="btn" onclick="openImportModal()">📥 Импорт из CSV/Excel</button>' +
+      '<button class="btn" onclick="downloadTemplate()">📄 Скачать шаблон CSV</button>' +
+    '</div>';
+  if (!questions.length) {
+    html += '<div class="empty-state"><span class="big-emoji">📭</span>В этом блоке пока нет вопросов.</div>';
   } else {
     const letters = ['а','б','в','г','д','е'];
-    questions.forEach((q, idx) => {
+    questions.forEach(function(q, idx) {
       const opts = Array.isArray(q.options) ? q.options : [];
-      html += `<div class="item-card">
-        <div class="item-title">${idx + 1}. ${escapeHtml(q.text)}</div>
-        <div class="item-sub" style="margin-top:6px">
-          ${opts.map((o, i) => `<span class="badge ${i === q.correct_index ? 'ok' : ''}">${letters[i]}) ${escapeHtml(o.slice(0, 30))}${o.length > 30 ? '…' : ''}</span>`).join('')}
-        </div>
-        <div class="row" style="margin-top:10px">
-          <button class="btn small" onclick="openQuestionEditor('${q.id}')">✏️ Изменить</button>
-          <button class="btn small danger" onclick="deleteQuestion('${q.id}')">🗑 Удалить</button>
-        </div>
-      </div>`;
+      html += '<div class="item-card">' +
+        '<div class="item-title">' + (idx + 1) + '. ' + escapeHtml(q.text) + '</div>' +
+        '<div class="item-sub" style="margin-top:6px">' +
+          opts.map(function(o, i) {
+            return '<span class="badge ' + (i === q.correct_index ? 'ok' : '') + '">' + letters[i] + ') ' + escapeHtml(o.slice(0, 30)) + (o.length > 30 ? '…' : '') + '</span>';
+          }).join('') +
+        '</div>' +
+        '<div class="row" style="margin-top:10px">' +
+          '<button class="btn small" onclick="openQuestionEditor(\'' + q.id + '\')">✏️ Изменить</button>' +
+          '<button class="btn small danger" onclick="deleteQuestion(\'' + q.id + '\')">🗑 Удалить</button>' +
+        '</div></div>';
     });
   }
-  html += `<div class="card"><button class="btn back" onclick="renderAdminBlocks()">← К блокам</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderAdminBlocks()">← К блокам</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
 async function openQuestionEditor(questionId) {
   let q = null;
   if (questionId) {
-    const { data } = await sb.from('questions').select('*').eq('id', questionId).single();
-    q = data;
+    const res = await sb.from('questions').select('*').eq('id', questionId).single();
+    q = res.data;
   }
   let opts = q && Array.isArray(q.options) ? q.options.slice() : ['', '', ''];
   while (opts.length < 2) opts.push('');
   window.__qOptions = opts;
-  window.__qCorrectIdx = q?.correct_index ?? 0;
-  showModal(`
-    <h3>${questionId ? 'Редактировать вопрос' : 'Новый вопрос'}</h3>
-    <label class="field-label">Текст вопроса</label>
-    <textarea class="textarea" id="qText" placeholder="Введите текст вопроса...">${escapeHtml(q?.text || '')}</textarea>
-    <label class="field-label">Варианты ответа</label>
-    <div class="meta" style="margin-top:-4px;margin-bottom:8px">Нажмите на букву, чтобы отметить правильный вариант</div>
-    <div id="optionsContainer"></div>
-    <button class="btn small" id="addOptBtn" type="button">+ Добавить вариант</button>
-    <label class="field-label" style="margin-top:12px">Объяснение (необязательно)</label>
-    <textarea class="textarea" id="qExplain" placeholder="Почему этот ответ правильный...">${escapeHtml(q?.explain || '')}</textarea>
-    <div id="questionModalError" class="warn-box hidden"></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">Отмена</button>
-      <button class="btn primary" onclick="saveQuestion('${questionId || ''}')">Сохранить</button>
-    </div>`);
+  window.__qCorrectIdx = q ? (q.correct_index != null ? q.correct_index : 0) : 0;
+  const qText = q ? q.text : '';
+  const qExplain = q ? q.explain : '';
+  showModal(
+    '<h3>' + (questionId ? 'Редактировать вопрос' : 'Новый вопрос') + '</h3>' +
+    '<label class="field-label">Текст вопроса</label>' +
+    '<textarea class="textarea" id="qText" placeholder="Введите текст вопроса...">' + escapeHtml(qText) + '</textarea>' +
+    '<label class="field-label">Варианты ответа</label>' +
+    '<div class="meta" style="margin-top:-4px;margin-bottom:8px">Нажмите на букву, чтобы отметить правильный вариант</div>' +
+    '<div id="optionsContainer"></div>' +
+    '<button class="btn small" id="addOptBtn" type="button">+ Добавить вариант</button>' +
+    '<label class="field-label" style="margin-top:12px">Объяснение (необязательно)</label>' +
+    '<textarea class="textarea" id="qExplain" placeholder="Почему этот ответ правильный...">' + escapeHtml(qExplain) + '</textarea>' +
+    '<div id="questionModalError" class="warn-box hidden"></div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn" onclick="closeModal()">Отмена</button>' +
+      '<button class="btn primary" onclick="saveQuestion(\'' + (questionId || '') + '\')">Сохранить</button>' +
+    '</div>'
+  );
   document.getElementById('addOptBtn').onclick = addOption;
   renderOptionsEditor();
 }
@@ -731,19 +769,20 @@ function syncOptionsFromDOM() {
   const c = document.getElementById('optionsContainer');
   if (!c) return;
   const inputs = c.querySelectorAll('input.input');
-  window.__qOptions = Array.from(inputs).map(inp => inp.value);
+  window.__qOptions = Array.from(inputs).map(function(inp) { return inp.value; });
 }
 function renderOptionsEditor() {
   const c = document.getElementById('optionsContainer');
   if (!c) return;
   const letters = ['а','б','в','г','д','е','ж','з'];
-  const correct = window.__qCorrectIdx ?? 0;
-  c.innerHTML = window.__qOptions.map((opt, i) => `
-    <div class="opt-row">
-      <div class="opt-marker ${i === correct ? 'correct' : ''}" onclick="setCorrectOption(${i})" style="cursor:pointer" title="Отметить правильным">${letters[i]}</div>
-      <input class="input" value="${escapeHtml(opt)}" placeholder="Вариант ${letters[i]}">
-      ${window.__qOptions.length > 2 ? `<button class="btn del" onclick="removeOption(${i})" type="button">🗑</button>` : ''}
-    </div>`).join('');
+  const correct = window.__qCorrectIdx != null ? window.__qCorrectIdx : 0;
+  c.innerHTML = window.__qOptions.map(function(opt, i) {
+    return '<div class="opt-row">' +
+      '<div class="opt-marker ' + (i === correct ? 'correct' : '') + '" onclick="setCorrectOption(' + i + ')" style="cursor:pointer" title="Отметить правильным">' + letters[i] + '</div>' +
+      '<input class="input" value="' + escapeHtml(opt) + '" placeholder="Вариант ' + letters[i] + '">' +
+      (window.__qOptions.length > 2 ? '<button class="btn del" onclick="removeOption(' + i + ')" type="button">🗑</button>' : '') +
+    '</div>';
+  }).join('');
 }
 function setCorrectOption(idx) { syncOptionsFromDOM(); window.__qCorrectIdx = idx; renderOptionsEditor(); }
 function addOption() {
@@ -766,12 +805,12 @@ async function saveQuestion(questionId) {
   const explain = document.getElementById('qExplain').value.trim();
   const err = document.getElementById('questionModalError');
   err.classList.add('hidden');
-  const options = window.__qOptions.map(o => (o || '').trim()).filter(o => o.length > 0);
+  const options = window.__qOptions.map(function(o) { return (o || '').trim(); }).filter(function(o) { return o.length > 0; });
   if (!text) { err.textContent = 'Введите текст вопроса'; err.classList.remove('hidden'); return; }
   if (options.length < 2) { err.textContent = 'Нужно минимум 2 варианта ответа'; err.classList.remove('hidden'); return; }
   let correct = window.__qCorrectIdx;
   if (correct >= options.length) correct = 0;
-  const payload = { block_id: state.currentBlock.id, text, options, correct_index: correct, explain };
+  const payload = { block_id: state.currentBlock.id, text: text, options: options, correct_index: correct, explain: explain };
   let result;
   if (questionId) result = await sb.from('questions').update(payload).eq('id', questionId);
   else result = await sb.from('questions').insert(payload);
@@ -781,8 +820,8 @@ async function saveQuestion(questionId) {
 }
 async function deleteQuestion(questionId) {
   if (!confirm('Удалить вопрос? Это необратимо.')) return;
-  const { error } = await sb.from('questions').delete().eq('id', questionId);
-  if (error) { alert('Ошибка: ' + error.message); return; }
+  const res = await sb.from('questions').delete().eq('id', questionId);
+  if (res.error) { alert('Ошибка: ' + res.error.message); return; }
   renderAdminQuestions(state.currentBlock.id);
 }
 
@@ -790,44 +829,42 @@ async function deleteQuestion(questionId) {
 // ИМПОРТ ИЗ CSV
 // ============================================================
 function openImportModal() {
-  showModal(`
-    <h3>📥 Импорт вопросов из CSV</h3>
-    <div class="info-box">
-      <b>Формат файла:</b> CSV с шапкой. Колонки:<br>
-      <code>Вопрос;Вариант1;Вариант2;Вариант3;Правильный;Объяснение</code><br>
-      <br>
-      • Разделитель: <b>;</b> (точка с запятой) — или <b>,</b> или <b>таб</b> — определится автоматически<br>
-      • Вопросов в файле — сколько угодно, каждая строка = вопрос<br>
-      • Вариантов может быть от 2 до 8<br>
-      • Правильный — <b>буквой (а,б,в,г,д,е)</b> или <b>номером (1,2,3…)</b><br>
-      • Объяснение — необязательно
-    </div>
-
-    <label class="field-label">Загрузить файл</label>
-    <div class="file-drop" id="fileDrop" onclick="document.getElementById('csvFile').click()">
-      <div class="fd-icon">📄</div>
-      <div class="fd-hint" id="fileDropHint">Нажмите, чтобы выбрать CSV-файл</div>
-    </div>
-    <input type="file" id="csvFile" accept=".csv,.txt,text/csv" style="display:none" onchange="onCsvFilePicked(this)">
-
-    <label class="field-label">…или вставьте текст CSV</label>
-    <textarea class="textarea mono" id="csvText" placeholder="Вопрос;Вариант1;Вариант2;Вариант3;Правильный;Объяснение"></textarea>
-
-    <div id="importError" class="warn-box hidden"></div>
-    <div id="importPreview"></div>
-
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">Отмена</button>
-      <button class="btn primary" id="importBtn" onclick="doImport()">Импортировать</button>
-    </div>
-  `);
+  showModal(
+    '<h3>📥 Импорт вопросов из CSV</h3>' +
+    '<div class="info-box">' +
+      '<b>Формат файла:</b> CSV с шапкой. Колонки:<br>' +
+      '<code>Вопрос;Вариант1;Вариант2;Вариант3;Правильный;Объяснение</code><br><br>' +
+      '• Разделитель: <b>;</b> (точка с запятой) — или <b>,</b> или <b>таб</b> — определится автоматически<br>' +
+      '• Вопросов в файле — сколько угодно, каждая строка = вопрос<br>' +
+      '• Вариантов может быть от 2 до 8<br>' +
+      '• Правильный — <b>буквой (а,б,в,г,д,е)</b> или <b>номером (1,2,3…)</b><br>' +
+      '• Объяснение — необязательно<br>' +
+      '• Если в тексте варианта есть <b>точка с запятой</b> — оберните вариант в <b>двойные кавычки</b>' +
+    '</div>' +
+    '<label class="field-label">Загрузить файл</label>' +
+    '<div class="file-drop" id="fileDrop" onclick="document.getElementById(\'csvFile\').click()">' +
+      '<div class="fd-icon">📄</div>' +
+      '<div class="fd-hint" id="fileDropHint">Нажмите, чтобы выбрать CSV-файл</div>' +
+    '</div>' +
+    '<input type="file" id="csvFile" accept=".csv,.txt,text/csv" style="display:none" onchange="onCsvFilePicked(this)">' +
+    '<label class="field-label">…или вставьте текст CSV</label>' +
+    '<textarea class="textarea mono" id="csvText" placeholder="Вопрос;Вариант1;Вариант2;Вариант3;Правильный;Объяснение"></textarea>' +
+    '<div id="importError" class="warn-box hidden"></div>' +
+    '<div id="importPreview"></div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn" onclick="closeModal()">Отмена</button>' +
+      '<button class="btn primary" id="importBtn" onclick="doImport()">Импортировать</button>' +
+    '</div>'
+  );
+  const txt = document.getElementById('csvText');
+  txt.addEventListener('input', previewCsv);
 }
 
 function onCsvFilePicked(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = function(e) {
     const text = e.target.result;
     document.getElementById('csvText').value = text;
     const fd = document.getElementById('fileDrop');
@@ -839,17 +876,14 @@ function onCsvFilePicked(input) {
 }
 
 function parseCSV(text) {
-  text = text.replace(/\uFEFF/g, ''); // BOM
+  text = text.replace(/\uFEFF/g, '');
   const firstLine = text.split(/\r?\n/)[0] || '';
   let sep = ';';
-  const cnt = {
-    ';': (firstLine.match(/;/g) || []).length,
-    ',': (firstLine.match(/,/g) || []).length,
-    '\t': (firstLine.match(/\t/g) || []).length,
-  };
-  if (cnt['\t'] > cnt[';'] && cnt['\t'] > cnt[',']) sep = '\t';
-  else if (cnt[','] > cnt[';']) sep = ',';
-
+  const cntS = (firstLine.match(/;/g) || []).length;
+  const cntC = (firstLine.match(/,/g) || []).length;
+  const cntT = (firstLine.match(/\t/g) || []).length;
+  if (cntT > cntS && cntT > cntC) sep = '\t';
+  else if (cntC > cntS) sep = ',';
   const rows = [];
   let cur = [];
   let field = '';
@@ -869,7 +903,7 @@ function parseCSV(text) {
     }
   }
   if (field || cur.length) { cur.push(field); rows.push(cur); }
-  return rows.filter(r => r.some(c => c && c.trim()));
+  return rows.filter(function(r) { return r.some(function(c) { return c && c.trim(); }); });
 }
 
 function parseCorrectValue(val) {
@@ -877,8 +911,8 @@ function parseCorrectValue(val) {
   val = String(val).trim().toLowerCase();
   const RU = 'абвгдежз';
   const EN = 'abcdefgh';
-  if (RU.includes(val) && val.length === 1) return RU.indexOf(val);
-  if (EN.includes(val) && val.length === 1) return EN.indexOf(val);
+  if (RU.indexOf(val) >= 0 && val.length === 1) return RU.indexOf(val);
+  if (EN.indexOf(val) >= 0 && val.length === 1) return EN.indexOf(val);
   const n = parseInt(val, 10);
   if (!isNaN(n) && n >= 1 && n <= 8) return n - 1;
   return -1;
@@ -897,55 +931,45 @@ function previewCsv() {
     err.classList.remove('hidden');
     return;
   }
-  const header = rows[0].map(h => h.trim().toLowerCase());
-  const qIdx = header.findIndex(h => h.includes('вопрос'));
-  const correctIdx = header.findIndex(h => h.includes('правильн') || h.includes('ответ'));
-  const explainIdx = header.findIndex(h => h.includes('объясн'));
+  const header = rows[0].map(function(h) { return h.trim().toLowerCase(); });
+  const qIdx = header.findIndex(function(h) { return h.indexOf('вопрос') >= 0; });
+  const correctIdx = header.findIndex(function(h) { return h.indexOf('правильн') >= 0 || h.indexOf('ответ') >= 0; });
   const optionIdxes = [];
-  header.forEach((h, i) => { if (h.includes('вариант') || /^в\d+$/.test(h)) optionIdxes.push(i); });
-
+  header.forEach(function(h, i) {
+    if (h.indexOf('вариант') >= 0 || /^в\d+$/.test(h)) optionIdxes.push(i);
+  });
   if (qIdx === -1 || correctIdx === -1 || optionIdxes.length < 2) {
     preview.innerHTML = '';
     err.innerHTML = 'Не найдены обязательные колонки.<br>Нужны: <b>Вопрос</b>, минимум 2 колонки <b>ВариантN</b>, <b>Правильный</b>.';
     err.classList.remove('hidden');
     return;
   }
-
   const dataRows = rows.slice(1);
   let valid = 0, invalid = 0;
   let previewRows = '';
-  dataRows.forEach((r, ri) => {
+  dataRows.forEach(function(r, ri) {
     const q = (r[qIdx] || '').trim();
-    const options = optionIdxes.map(i => (r[i] || '').trim()).filter(o => o.length > 0);
+    const options = optionIdxes.map(function(i) { return (r[i] || '').trim(); }).filter(function(o) { return o.length > 0; });
     const correct = parseCorrectValue(r[correctIdx]);
     const ok = q && options.length >= 2 && correct >= 0 && correct < options.length;
     if (ok) valid++; else invalid++;
     if (ri < 5) {
-      previewRows += `<tr>
-        <td>${escapeHtml(q.slice(0, 60))}${q.length > 60 ? '…' : ''}</td>
-        <td>${options.length}</td>
-        <td>${correct >= 0 ? (correct + 1) : '—'}</td>
-        <td>${ok ? '✅' : '❌'}</td>
-      </tr>`;
+      previewRows += '<tr>' +
+        '<td>' + escapeHtml(q.slice(0, 60)) + (q.length > 60 ? '…' : '') + '</td>' +
+        '<td>' + options.length + '</td>' +
+        '<td>' + (correct >= 0 ? (correct + 1) : '—') + '</td>' +
+        '<td>' + (ok ? '✅' : '❌') + '</td>' +
+        '</tr>';
     }
   });
-
-  preview.innerHTML = `
-    <div class="meta">Найдено: <b>${dataRows.length}</b> строк · валидных: <b style="color: var(--correct)">${valid}</b> · с ошибками: <b style="color: ${invalid > 0 ? 'var(--wrong)' : 'var(--text-dim)'}">${invalid}</b></div>
-    <div class="preview-table">
-      <table class="data-table">
-        <thead><tr><th>Вопрос</th><th>Вар.</th><th>Прав.</th><th>OK</th></tr></thead>
-        <tbody>${previewRows}</tbody>
-      </table>
-    </div>
-    <div class="meta">Показаны первые 5 строк. Некорректные строки будут пропущены.</div>
-  `;
+  preview.innerHTML =
+    '<div class="meta">Найдено: <b>' + dataRows.length + '</b> строк · валидных: <b style="color: var(--correct)">' + valid + '</b> · с ошибками: <b style="color: ' + (invalid > 0 ? 'var(--wrong)' : 'var(--text-dim)') + '">' + invalid + '</b></div>' +
+    '<div class="preview-table"><table class="data-table">' +
+      '<thead><tr><th>Вопрос</th><th>Вар.</th><th>Прав.</th><th>OK</th></tr></thead>' +
+      '<tbody>' + previewRows + '</tbody>' +
+    '</table></div>' +
+    '<div class="meta">Показаны первые 5 строк. Некорректные строки будут пропущены.</div>';
 }
-
-// Автопревью при вводе
-document.addEventListener('input', (e) => {
-  if (e.target && e.target.id === 'csvText') previewCsv();
-});
 
 async function doImport() {
   const text = document.getElementById('csvText').value.trim();
@@ -955,53 +979,48 @@ async function doImport() {
   if (!text) { err.textContent = 'Вставьте текст или загрузите файл'; err.classList.remove('hidden'); return; }
   const rows = parseCSV(text);
   if (rows.length < 2) { err.textContent = 'Недостаточно данных'; err.classList.remove('hidden'); return; }
-  const header = rows[0].map(h => h.trim().toLowerCase());
-  const qIdx = header.findIndex(h => h.includes('вопрос'));
-  const correctIdx = header.findIndex(h => h.includes('правильн') || h.includes('ответ'));
-  const explainIdx = header.findIndex(h => h.includes('объясн'));
+  const header = rows[0].map(function(h) { return h.trim().toLowerCase(); });
+  const qIdx = header.findIndex(function(h) { return h.indexOf('вопрос') >= 0; });
+  const correctIdx = header.findIndex(function(h) { return h.indexOf('правильн') >= 0 || h.indexOf('ответ') >= 0; });
+  const explainIdx = header.findIndex(function(h) { return h.indexOf('объясн') >= 0; });
   const optionIdxes = [];
-  header.forEach((h, i) => { if (h.includes('вариант') || /^в\d+$/.test(h)) optionIdxes.push(i); });
-
+  header.forEach(function(h, i) {
+    if (h.indexOf('вариант') >= 0 || /^в\d+$/.test(h)) optionIdxes.push(i);
+  });
   if (qIdx === -1 || correctIdx === -1 || optionIdxes.length < 2) {
     err.textContent = 'Не найдены обязательные колонки';
     err.classList.remove('hidden');
     return;
   }
-
   const payloads = [];
   const dataRows = rows.slice(1);
-  dataRows.forEach(r => {
+  dataRows.forEach(function(r) {
     const q = (r[qIdx] || '').trim();
-    const options = optionIdxes.map(i => (r[i] || '').trim()).filter(o => o.length > 0);
+    const options = optionIdxes.map(function(i) { return (r[i] || '').trim(); }).filter(function(o) { return o.length > 0; });
     const correct = parseCorrectValue(r[correctIdx]);
     const explain = explainIdx >= 0 ? (r[explainIdx] || '').trim() : '';
     if (q && options.length >= 2 && correct >= 0 && correct < options.length) {
-      payloads.push({ block_id: state.currentBlock.id, text: q, options, correct_index: correct, explain });
+      payloads.push({ block_id: state.currentBlock.id, text: q, options: options, correct_index: correct, explain: explain });
     }
   });
-
-  if (payloads.length === 0) {
+  if (!payloads.length) {
     err.textContent = 'Нет ни одной корректной строки для импорта';
     err.classList.remove('hidden');
     return;
   }
-
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Импорт ' + payloads.length + '...';
-
-  // Импортируем батчами по 50 (чтобы не перегружать)
   const BATCH = 50;
   let inserted = 0, errors = 0;
   for (let i = 0; i < payloads.length; i += BATCH) {
     const chunk = payloads.slice(i, i + BATCH);
-    const { data, error } = await sb.from('questions').insert(chunk).select();
-    if (error) { errors += chunk.length; console.error(error); }
-    else inserted += (data || []).length;
+    const res = await sb.from('questions').insert(chunk).select();
+    if (res.error) { errors += chunk.length; console.error(res.error); }
+    else inserted += (res.data || []).length;
   }
-
   closeModal();
-  let msg = `✅ Импортировано: ${inserted}`;
-  if (errors > 0) msg += `\n❌ Ошибок: ${errors}`;
+  let msg = '✅ Импортировано: ' + inserted;
+  if (errors > 0) msg += '\n❌ Ошибок: ' + errors;
   alert(msg);
   renderAdminQuestions(state.currentBlock.id);
 }
@@ -1029,22 +1048,23 @@ function downloadTemplate() {
 // ============================================================
 async function renderAdminAllQuestions() {
   state.screen = 'adminAllQ';
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
-  const { data: questions } = await sb.from('questions').select('*, blocks(name)').order('created_at', { ascending: false }).limit(500);
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Все вопросы</div></div><h1>❓ Все вопросы</h1>`;
-  if (!questions || questions.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>Нет ни одного вопроса.</div>`;
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
+  const res = await sb.from('questions').select('*, blocks(name)').order('created_at', { ascending: false }).limit(500);
+  const questions = res.data || [];
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Все вопросы</div></div><h1>❓ Все вопросы</h1>';
+  if (!questions.length) {
+    html += '<div class="empty-state"><span class="big-emoji">📭</span>Нет ни одного вопроса.</div>';
   } else {
-    html += `<div class="meta">Всего: ${questions.length}</div>`;
-    questions.forEach(q => {
+    html += '<div class="meta">Всего: ' + questions.length + '</div>';
+    questions.forEach(function(q) {
       const opts = Array.isArray(q.options) ? q.options : [];
-      html += `<div class="item-card">
-        <div class="item-title">${escapeHtml(q.text)}</div>
-        <div class="item-sub">Блок: <b>${escapeHtml(q.blocks?.name || '—')}</b> · вариантов: ${opts.length}</div>
-      </div>`;
+      html += '<div class="item-card">' +
+        '<div class="item-title">' + escapeHtml(q.text) + '</div>' +
+        '<div class="item-sub">Блок: <b>' + escapeHtml(q.blocks ? q.blocks.name : '—') + '</b> · вариантов: ' + opts.length + '</div>' +
+      '</div>';
     });
   }
-  html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -1054,43 +1074,44 @@ async function renderAdminAllQuestions() {
 // ============================================================
 async function renderAdminUsers() {
   state.screen = 'adminUsers';
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
-  const { data: users } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
-  const roleLabel = r => r === 'admin' ? 'Админ' : r === 'chief' ? 'Начальник' : 'Стажёр';
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Пользователи</div></div><h1>👥 Пользователи</h1>
-    <div class="info-box">Роли: <b>admin</b> — полный доступ, <b>chief</b> — начальник, <b>cadet</b> — стажёр.</div>
-    <div class="meta">Всего: ${users?.length || 0}</div>`;
-  (users || []).forEach(u => {
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
+  const res = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+  const users = res.data || [];
+  function roleLabel(r) { return r === 'admin' ? 'Админ' : r === 'chief' ? 'Начальник' : 'Стажёр'; }
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderAdminPanel()">←</button><div class="title">Пользователи</div></div><h1>👥 Пользователи</h1>' +
+    '<div class="info-box">Роли: <b>admin</b> — полный доступ, <b>chief</b> — начальник, <b>cadet</b> — стажёр.</div>' +
+    '<div class="meta">Всего: ' + users.length + '</div>';
+  users.forEach(function(u) {
     const isMe = u.id === state.session.user.id;
-    html += `<div class="item-card">
-      <div class="block-title">
-        <div class="item-title">${escapeHtml(u.callsign)}${isMe ? ' <span class="badge">это вы</span>' : ''}</div>
-        <span class="badge ${u.role}">${roleLabel(u.role)}</span>
-      </div>
-      <div class="row" style="margin-top:10px;align-items:center">
-        <select class="input" style="margin:0;flex:1" onchange="changeRole('${u.id}', this.value)">
-          <option value="cadet" ${u.role === 'cadet' ? 'selected' : ''}>Стажёр</option>
-          <option value="chief" ${u.role === 'chief' ? 'selected' : ''}>Начальник</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Админ</option>
-        </select>
-        ${!isMe ? `<button class="btn small danger" style="flex:0 0 auto;min-width:100px" onclick="deleteUser('${u.id}', '${escapeHtml(u.callsign)}')">🗑 Удалить</button>` : ''}
-      </div>
-    </div>`;
+    html += '<div class="item-card">' +
+      '<div class="block-title">' +
+        '<div class="item-title">' + escapeHtml(u.callsign) + (isMe ? ' <span class="badge">это вы</span>' : '') + '</div>' +
+        '<span class="badge ' + u.role + '">' + roleLabel(u.role) + '</span>' +
+      '</div>' +
+      '<div class="row" style="margin-top:10px;align-items:center">' +
+        '<select class="input" style="margin:0;flex:1" onchange="changeRole(\'' + u.id + '\', this.value)">' +
+          '<option value="cadet" ' + (u.role === 'cadet' ? 'selected' : '') + '>Стажёр</option>' +
+          '<option value="chief" ' + (u.role === 'chief' ? 'selected' : '') + '>Начальник</option>' +
+          '<option value="admin" ' + (u.role === 'admin' ? 'selected' : '') + '>Админ</option>' +
+        '</select>' +
+        (!isMe ? '<button class="btn small danger" style="flex:0 0 auto;min-width:100px" onclick="deleteUser(\'' + u.id + '\', \'' + escapeHtml(u.callsign).replace(/'/g, "\\'") + '\')">🗑 Удалить</button>' : '') +
+      '</div>' +
+    '</div>';
   });
-  html += `<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderAdminPanel()">← Назад</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
 async function changeRole(userId, role) {
-  const { error } = await sb.from('profiles').update({ role }).eq('id', userId);
-  if (error) { alert('Ошибка: ' + error.message); return; }
+  const res = await sb.from('profiles').update({ role: role }).eq('id', userId);
+  if (res.error) { alert('Ошибка: ' + res.error.message); return; }
   if (userId === state.session.user.id) state.profile.role = role;
   renderAdminUsers();
 }
 async function deleteUser(userId, callsign) {
-  if (!confirm(`Удалить ${callsign}?\n\nЕго профиль и все результаты удалятся.`)) return;
-  const { error } = await sb.from('profiles').delete().eq('id', userId);
-  if (error) { alert('Ошибка: ' + error.message); return; }
+  if (!confirm('Удалить ' + callsign + '?\n\nЕго профиль и все результаты удалятся.')) return;
+  const res = await sb.from('profiles').delete().eq('id', userId);
+  if (res.error) { alert('Ошибка: ' + res.error.message); return; }
   renderAdminUsers();
 }
 
@@ -1099,111 +1120,109 @@ async function deleteUser(userId, callsign) {
 // ============================================================
 async function renderChiefPanel() {
   state.screen = 'chief';
-  app.innerHTML = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Результаты стажёров</div></div>
-    <h1>👁 Результаты стажёров</h1><div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  app.innerHTML = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Результаты стажёров</div></div>' +
+    '<h1>👁 Результаты стажёров</h1><div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
 
-  const [{ data: users }, { data: attempts }, { data: blocks }] = await Promise.all([
-    sb.from('profiles').select('*').order('created_at'),
-    sb.from('attempts').select('*').not('finished_at', 'is', null).order('finished_at', { ascending: false }),
-    sb.from('blocks').select('*'),
-  ]);
-
+  const uRes = await sb.from('profiles').select('*').order('created_at');
+  const aRes = await sb.from('attempts').select('*').not('finished_at', 'is', null).order('finished_at', { ascending: false });
+  const bRes = await sb.from('blocks').select('*');
+  const users = uRes.data || [];
+  const attempts = aRes.data || [];
+  const blocks = bRes.data || [];
   const blockMap = {};
-  (blocks || []).forEach(b => { blockMap[b.id] = b.name; });
+  blocks.forEach(function(b) { blockMap[b.id] = b.name; });
 
   const statsByUser = {};
-  (users || []).forEach(u => { statsByUser[u.id] = { user: u, attempts: [], avg: 0, best: 0, lastAt: null }; });
-  (attempts || []).forEach(a => {
+  users.forEach(function(u) { statsByUser[u.id] = { user: u, attempts: [], avg: 0, best: 0, lastAt: null }; });
+  attempts.forEach(function(a) {
     if (!statsByUser[a.user_id]) return;
     const s = statsByUser[a.user_id];
     s.attempts.push(a);
     if (!s.lastAt || new Date(a.finished_at) > new Date(s.lastAt)) s.lastAt = a.finished_at;
   });
-  Object.values(statsByUser).forEach(s => {
-    if (s.attempts.length === 0) return;
-    const pcts = s.attempts.map(a => a.total > 0 ? (a.score / a.total) * 100 : 0);
-    s.avg = Math.round(pcts.reduce((x, y) => x + y, 0) / pcts.length);
-    s.best = Math.round(Math.max(...pcts));
+  Object.keys(statsByUser).forEach(function(k) {
+    const s = statsByUser[k];
+    if (!s.attempts.length) return;
+    const pcts = s.attempts.map(function(a) { return a.total > 0 ? (a.score / a.total) * 100 : 0; });
+    s.avg = Math.round(pcts.reduce(function(x, y) { return x + y; }, 0) / pcts.length);
+    s.best = Math.round(Math.max.apply(null, pcts));
   });
 
-  const totalCadets = (users || []).filter(u => u.role === 'cadet').length;
-  const totalAttempts = (attempts || []).length;
-  const allPcts = (attempts || []).map(a => a.total > 0 ? (a.score / a.total) * 100 : 0);
-  const avgAll = allPcts.length ? Math.round(allPcts.reduce((x, y) => x + y, 0) / allPcts.length) : 0;
-  const passed = allPcts.filter(p => p >= 60).length;
+  const totalCadets = users.filter(function(u) { return u.role === 'cadet'; }).length;
+  const totalAttempts = attempts.length;
+  const allPcts = attempts.map(function(a) { return a.total > 0 ? (a.score / a.total) * 100 : 0; });
+  const avgAll = allPcts.length ? Math.round(allPcts.reduce(function(x, y) { return x + y; }, 0) / allPcts.length) : 0;
+  const passed = allPcts.filter(function(p) { return p >= 60; }).length;
   const passRate = allPcts.length ? Math.round(passed / allPcts.length * 100) : 0;
 
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Результаты стажёров</div></div>
-    <h1>👁 Результаты стажёров</h1>`;
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderMenu()">←</button><div class="title">Результаты стажёров</div></div>' +
+    '<h1>👁 Результаты стажёров</h1>' +
+    '<div class="kpi-grid">' +
+      '<div class="kpi"><div class="kpi-value">' + totalCadets + '</div><div class="kpi-label">Стажёров</div></div>' +
+      '<div class="kpi"><div class="kpi-value">' + totalAttempts + '</div><div class="kpi-label">Попыток</div></div>' +
+      '<div class="kpi"><div class="kpi-value">' + avgAll + '%</div><div class="kpi-label">Средний балл</div></div>' +
+      '<div class="kpi"><div class="kpi-value">' + passRate + '%</div><div class="kpi-label">Сдали (≥60%)</div></div>' +
+    '</div>' +
+    '<div class="card"><div class="row">' +
+      '<button class="btn small" onclick="exportResultsCSV()">📥 Экспорт в CSV</button>' +
+      '<button class="btn small" onclick="renderChiefPanel()">🔄 Обновить</button>' +
+    '</div></div>';
 
-  html += `<div class="kpi-grid">
-    <div class="kpi"><div class="kpi-value">${totalCadets}</div><div class="kpi-label">Стажёров</div></div>
-    <div class="kpi"><div class="kpi-value">${totalAttempts}</div><div class="kpi-label">Попыток</div></div>
-    <div class="kpi"><div class="kpi-value">${avgAll}%</div><div class="kpi-label">Средний балл</div></div>
-    <div class="kpi"><div class="kpi-value">${passRate}%</div><div class="kpi-label">Сдали (≥60%)</div></div>
-  </div>`;
-
-  html += `<div class="card">
-    <div class="row">
-      <button class="btn small" onclick="exportResultsCSV()">📥 Экспорт в CSV</button>
-      <button class="btn small" onclick="renderChiefPanel()">🔄 Обновить</button>
-    </div>
-  </div>`;
-
-  const cadets = (users || []).filter(u => u.role === 'cadet');
-  html += `<div class="card"><div class="block-title"><h2>📋 Стажёры</h2></div>`;
-  if (cadets.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">👥</span>Пока нет ни одного стажёра.</div>`;
+  const cadets = users.filter(function(u) { return u.role === 'cadet'; });
+  html += '<div class="card"><div class="block-title"><h2>📋 Стажёры</h2></div>';
+  if (!cadets.length) {
+    html += '<div class="empty-state"><span class="big-emoji">👥</span>Пока нет ни одного стажёра.</div>';
   } else {
-    html += `<div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Позывной</th><th class="num">Попыток</th><th class="num">Средний</th><th class="num">Лучший</th><th>Последний раз</th></tr></thead><tbody>`;
-    cadets.forEach(u => {
+    html += '<div class="table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Позывной</th><th class="num">Попыток</th><th class="num">Средний</th><th class="num">Лучший</th><th>Последний раз</th></tr></thead><tbody>';
+    cadets.forEach(function(u) {
       const s = statsByUser[u.id];
-      const avgBadge = s.attempts.length === 0 ? '—' : `<span class="badge ${s.avg >= 75 ? 'green' : s.avg >= 60 ? 'yellow' : 'red'}">${s.avg}%</span>`;
-      html += `<tr class="clickable" onclick="renderCadetDetail('${u.id}')">
-        <td><b>${escapeHtml(u.callsign)}</b></td>
-        <td class="num">${s.attempts.length}</td>
-        <td class="num">${avgBadge}</td>
-        <td class="num">${s.attempts.length ? s.best + '%' : '—'}</td>
-        <td>${s.lastAt ? fmtDate(s.lastAt) : '—'}</td>
-      </tr>`;
+      const avgBadge = s.attempts.length === 0 ? '—' : '<span class="badge ' + (s.avg >= 75 ? 'green' : s.avg >= 60 ? 'yellow' : 'red') + '">' + s.avg + '%</span>';
+      html += '<tr class="clickable" onclick="renderCadetDetail(\'' + u.id + '\')">' +
+        '<td><b>' + escapeHtml(u.callsign) + '</b></td>' +
+        '<td class="num">' + s.attempts.length + '</td>' +
+        '<td class="num">' + avgBadge + '</td>' +
+        '<td class="num">' + (s.attempts.length ? s.best + '%' : '—') + '</td>' +
+        '<td>' + (s.lastAt ? fmtDate(s.lastAt) : '—') + '</td>' +
+      '</tr>';
     });
-    html += `</tbody></table></div>`;
-    html += `<div class="meta" style="margin-top:10px">👆 Нажмите на стажёра, чтобы увидеть разбор</div>`;
+    html += '</tbody></table></div>';
+    html += '<div class="meta" style="margin-top:10px">👆 Нажмите на стажёра, чтобы увидеть разбор</div>';
   }
-  html += `</div>`;
+  html += '</div>';
 
-  const { data: allAnswers } = await sb.from('answers').select('question_id, is_correct').eq('is_correct', false);
+  const waRes = await sb.from('answers').select('question_id, is_correct').eq('is_correct', false);
   const wrongCount = {};
-  (allAnswers || []).forEach(a => { wrongCount[a.question_id] = (wrongCount[a.question_id] || 0) + 1; });
-  const topWrongIds = Object.entries(wrongCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(x => x[0]);
+  (waRes.data || []).forEach(function(a) { wrongCount[a.question_id] = (wrongCount[a.question_id] || 0) + 1; });
+  const topWrongIds = Object.keys(wrongCount).sort(function(a, b) { return wrongCount[b] - wrongCount[a]; }).slice(0, 10);
   let topQuestions = [];
   if (topWrongIds.length > 0) {
-    const { data: qs } = await sb.from('questions').select('id, text, options, correct_index, block_id').in('id', topWrongIds);
-    topQuestions = (qs || []).map(q => ({ ...q, wrongCount: wrongCount[q.id], blockName: blockMap[q.block_id] || '—' }));
-    topQuestions.sort((a, b) => b.wrongCount - a.wrongCount);
+    const qRes = await sb.from('questions').select('id, text, options, correct_index, block_id').in('id', topWrongIds);
+    topQuestions = (qRes.data || []).map(function(q) {
+      return Object.assign({}, q, { wrongCount: wrongCount[q.id], blockName: blockMap[q.block_id] || '—' });
+    });
+    topQuestions.sort(function(a, b) { return b.wrongCount - a.wrongCount; });
   }
 
-  html += `<div class="card"><div class="block-title"><h2>🔥 Топ проблемных вопросов</h2></div>`;
-  if (topQuestions.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">✨</span>Пока нет данных об ошибках.</div>`;
+  html += '<div class="card"><div class="block-title"><h2>🔥 Топ проблемных вопросов</h2></div>';
+  if (!topQuestions.length) {
+    html += '<div class="empty-state"><span class="big-emoji">✨</span>Пока нет данных об ошибках.</div>';
   } else {
     const letters = ['а','б','в','г','д','е'];
-    topQuestions.forEach((q, i) => {
+    topQuestions.forEach(function(q, i) {
       const correct = Array.isArray(q.options) && q.options[q.correct_index] ? q.options[q.correct_index] : '';
-      html += `<div class="top-q-row">
-        <div class="top-q-rank">${i + 1}</div>
-        <div class="top-q-body">
-          <div class="top-q-text">${escapeHtml(q.text)}</div>
-          <div class="top-q-meta">Блок: ${escapeHtml(q.blockName)} · ошиблись <b>${q.wrongCount}</b> раз</div>
-          ${correct ? `<div class="top-q-meta" style="color: var(--correct); margin-top:4px">✓ ${letters[q.correct_index]}) ${escapeHtml(correct)}</div>` : ''}
-        </div>
-      </div>`;
+      html += '<div class="top-q-row">' +
+        '<div class="top-q-rank">' + (i + 1) + '</div>' +
+        '<div class="top-q-body">' +
+          '<div class="top-q-text">' + escapeHtml(q.text) + '</div>' +
+          '<div class="top-q-meta">Блок: ' + escapeHtml(q.blockName) + ' · ошиблись <b>' + q.wrongCount + '</b> раз</div>' +
+          (correct ? '<div class="top-q-meta" style="color: var(--correct); margin-top:4px">✓ ' + letters[q.correct_index] + ') ' + escapeHtml(correct) + '</div>' : '') +
+        '</div></div>';
     });
   }
-  html += `</div>`;
+  html += '</div>';
 
-  html += `<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>`;
+  html += '<div class="card"><button class="btn back" onclick="renderMenu()">← Главное меню</button></div>';
   app.innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -1213,94 +1232,95 @@ async function renderChiefPanel() {
 // ============================================================
 async function renderCadetDetail(userId) {
   state.screen = 'cadetDetail';
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка...</div>`;
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка...</div>';
 
-  const { data: user } = await sb.from('profiles').select('*').eq('id', userId).single();
-  const { data: attempts } = await sb.from('attempts').select('*, blocks(name)').eq('user_id', userId).not('finished_at', 'is', null).order('finished_at', { ascending: false });
+  const uRes = await sb.from('profiles').select('*').eq('id', userId).single();
+  const aRes = await sb.from('attempts').select('*, blocks(name)').eq('user_id', userId).not('finished_at', 'is', null).order('finished_at', { ascending: false });
+  const user = uRes.data;
+  const attempts = aRes.data || [];
 
-  const attemptIds = (attempts || []).map(a => a.id);
+  const attemptIds = attempts.map(function(a) { return a.id; });
   let allAnswers = [];
   if (attemptIds.length > 0) {
-    const { data: ans } = await sb.from('answers').select('*').in('attempt_id', attemptIds);
-    allAnswers = ans || [];
+    const ansRes = await sb.from('answers').select('*').in('attempt_id', attemptIds);
+    allAnswers = ansRes.data || [];
   }
 
   const wrongByQ = {};
-  allAnswers.filter(a => !a.is_correct).forEach(a => { wrongByQ[a.question_id] = (wrongByQ[a.question_id] || 0) + 1; });
+  allAnswers.filter(function(a) { return !a.is_correct; }).forEach(function(a) { wrongByQ[a.question_id] = (wrongByQ[a.question_id] || 0) + 1; });
   const wrongQIds = Object.keys(wrongByQ);
   let wrongQuestions = [];
   if (wrongQIds.length > 0) {
-    const { data: qs } = await sb.from('questions').select('*, blocks(name)').in('id', wrongQIds);
-    wrongQuestions = (qs || []).map(q => ({ ...q, wrongCount: wrongByQ[q.id] }));
-    wrongQuestions.sort((a, b) => b.wrongCount - a.wrongCount);
+    const qRes = await sb.from('questions').select('*, blocks(name)').in('id', wrongQIds);
+    wrongQuestions = (qRes.data || []).map(function(q) { return Object.assign({}, q, { wrongCount: wrongByQ[q.id] }); });
+    wrongQuestions.sort(function(a, b) { return b.wrongCount - a.wrongCount; });
   }
 
-  const totalAttempts = (attempts || []).length;
+  const totalAttempts = attempts.length;
   const totalAnswers = allAnswers.length;
-  const correctAnswers = allAnswers.filter(a => a.is_correct).length;
+  const correctAnswers = allAnswers.filter(function(a) { return a.is_correct; }).length;
   const accuracy = totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0;
 
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderChiefPanel()">←</button><div class="title">${escapeHtml(user?.callsign || '')}</div></div>
-    <h1>👤 ${escapeHtml(user?.callsign || 'Стажёр')}</h1>`;
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderChiefPanel()">←</button><div class="title">' + escapeHtml(user ? user.callsign : '') + '</div></div>' +
+    '<h1>👤 ' + escapeHtml(user ? user.callsign : 'Стажёр') + '</h1>' +
+    '<div class="kpi-grid">' +
+      '<div class="kpi"><div class="kpi-value">' + totalAttempts + '</div><div class="kpi-label">Попыток</div></div>' +
+      '<div class="kpi"><div class="kpi-value">' + accuracy + '%</div><div class="kpi-label">Точность</div></div>' +
+      '<div class="kpi"><div class="kpi-value">' + correctAnswers + '</div><div class="kpi-label">Верных</div></div>' +
+      '<div class="kpi"><div class="kpi-value">' + (totalAnswers - correctAnswers) + '</div><div class="kpi-label">Ошибок</div></div>' +
+    '</div>';
 
-  html += `<div class="kpi-grid">
-    <div class="kpi"><div class="kpi-value">${totalAttempts}</div><div class="kpi-label">Попыток</div></div>
-    <div class="kpi"><div class="kpi-value">${accuracy}%</div><div class="kpi-label">Точность</div></div>
-    <div class="kpi"><div class="kpi-value">${correctAnswers}</div><div class="kpi-label">Верных</div></div>
-    <div class="kpi"><div class="kpi-value">${totalAnswers - correctAnswers}</div><div class="kpi-label">Ошибок</div></div>
-  </div>`;
-
-  html += `<div class="card"><div class="block-title"><h2>📜 История попыток</h2></div>
-    <div class="meta">👆 Нажмите на строку, чтобы увидеть все ответы стажёра</div>`;
-  if (!attempts || attempts.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">📭</span>Стажёр ещё не проходил тесты.</div>`;
+  html += '<div class="card"><div class="block-title"><h2>📜 История попыток</h2></div>' +
+    '<div class="meta">👆 Нажмите на строку, чтобы увидеть все ответы стажёра</div>';
+  if (!attempts.length) {
+    html += '<div class="empty-state"><span class="big-emoji">📭</span>Стажёр ещё не проходил тесты.</div>';
   } else {
-    html += `<div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>`;
-    attempts.forEach(a => {
+    html += '<div class="table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Дата</th><th>Блок</th><th class="num">Результат</th><th class="num">%</th></tr></thead><tbody>';
+    attempts.forEach(function(a) {
       const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-      html += `<tr class="clickable" onclick="renderAttemptDetail('${a.id}')">
-        <td>${fmtDate(a.finished_at)}</td>
-        <td>${escapeHtml(a.blocks?.name || '—')}</td>
-        <td class="num">${a.score} / ${a.total}</td>
-        <td class="num"><span class="badge ${pct >= 75 ? 'green' : pct >= 60 ? 'yellow' : 'red'}">${pct}%</span></td>
-      </tr>`;
+      html += '<tr class="clickable" onclick="renderAttemptDetail(\'' + a.id + '\')">' +
+        '<td>' + fmtDate(a.finished_at) + '</td>' +
+        '<td>' + escapeHtml(a.blocks ? a.blocks.name : '—') + '</td>' +
+        '<td class="num">' + a.score + ' / ' + a.total + '</td>' +
+        '<td class="num"><span class="badge ' + (pct >= 75 ? 'green' : pct >= 60 ? 'yellow' : 'red') + '">' + pct + '%</span></td>' +
+      '</tr>';
     });
-    html += `</tbody></table></div>`;
+    html += '</tbody></table></div>';
   }
-  html += `</div>`;
+  html += '</div>';
 
-  html += `<div class="card"><div class="block-title"><h2>❌ Проблемные вопросы</h2></div>
-    <div class="meta">Вопросы, где стажёр ошибался. Именно их стоит разобрать.</div>`;
-  if (wrongQuestions.length === 0) {
-    html += `<div class="empty-state"><span class="big-emoji">🎉</span>Ошибок нет!</div>`;
+  html += '<div class="card"><div class="block-title"><h2>❌ Проблемные вопросы</h2></div>' +
+    '<div class="meta">Вопросы, где стажёр ошибался. Именно их стоит разобрать.</div>';
+  if (!wrongQuestions.length) {
+    html += '<div class="empty-state"><span class="big-emoji">🎉</span>Ошибок нет!</div>';
   } else {
     const letters = ['а','б','в','г','д','е'];
-    wrongQuestions.forEach(q => {
+    wrongQuestions.forEach(function(q) {
       const opts = Array.isArray(q.options) ? q.options : [];
-      html += `<div class="err-card">
-        <div class="err-q">${escapeHtml(q.text)}</div>
-        <div class="err-opts">
-          ${opts.map((o, i) => {
+      html += '<div class="err-card">' +
+        '<div class="err-q">' + escapeHtml(q.text) + '</div>' +
+        '<div class="err-opts">' +
+          opts.map(function(o, i) {
             const cls = i === q.correct_index ? 'correct' : '';
-            return `<div class="${cls}">${i === q.correct_index ? '✓' : '•'} ${letters[i]}) ${escapeHtml(o)}</div>`;
-          }).join('')}
-        </div>
-        ${q.explain ? `<div class="err-opts" style="margin-top:6px;color:var(--text-dim)"><b>Объяснение:</b> ${escapeHtml(q.explain)}</div>` : ''}
-        <div class="err-count">Блок: ${escapeHtml(q.blocks?.name || '—')} · ошибок: <b>${q.wrongCount}</b></div>
-      </div>`;
+            return '<div class="' + cls + '">' + (i === q.correct_index ? '✓' : '•') + ' ' + letters[i] + ') ' + escapeHtml(o) + '</div>';
+          }).join('') +
+        '</div>' +
+        (q.explain ? '<div class="err-opts" style="margin-top:6px;color:var(--text-dim)"><b>Объяснение:</b> ' + escapeHtml(q.explain) + '</div>' : '') +
+        '<div class="err-count">Блок: ' + escapeHtml(q.blocks ? q.blocks.name : '—') + ' · ошибок: <b>' + q.wrongCount + '</b></div>' +
+      '</div>';
     });
   }
-  html += `</div>`;
+  html += '</div>';
 
-  html += `<div class="card">
-    <button class="btn" onclick="exportCadetCSV('${userId}')">📥 Экспорт ошибок в CSV</button>
-    <button class="btn back" onclick="renderChiefPanel()">← К списку стажёров</button>
-  </div>`;
+  html += '<div class="card">' +
+    '<button class="btn" onclick="exportCadetCSV(\'' + userId + '\')">📥 Экспорт ошибок в CSV</button>' +
+    '<button class="btn back" onclick="renderChiefPanel()">← К списку стажёров</button>' +
+  '</div>';
 
   app.innerHTML = html;
   window.scrollTo(0, 0);
-  window.__currentCadet = { user, attempts, wrongQuestions };
+  window.__currentCadet = { user: user, attempts: attempts, wrongQuestions: wrongQuestions };
 }
 
 // ============================================================
@@ -1309,66 +1329,68 @@ async function renderCadetDetail(userId) {
 async function renderAttemptDetail(attemptId) {
   state.screen = 'attemptDetail';
   window.__viewAttemptId = attemptId;
-  app.innerHTML = `<div class="empty-state"><span class="spinner"></span>Загрузка ответов...</div>`;
+  app.innerHTML = '<div class="empty-state"><span class="spinner"></span>Загрузка ответов...</div>';
 
-  const { data: attempt } = await sb.from('attempts').select('*, blocks(name)').eq('id', attemptId).single();
+  const aRes = await sb.from('attempts').select('*, blocks(name)').eq('id', attemptId).single();
+  const attempt = aRes.data;
   if (!attempt) {
-    app.innerHTML = `<div class="empty-state">Попытка не найдена. <button class="btn small" onclick="renderChiefPanel()">← Назад</button></div>`;
+    app.innerHTML = '<div class="empty-state">Попытка не найдена. <button class="btn small" onclick="renderChiefPanel()">← Назад</button></div>';
     return;
   }
-  const { data: user } = await sb.from('profiles').select('*').eq('id', attempt.user_id).single();
-  const { data: answers } = await sb.from('answers').select('*').eq('attempt_id', attemptId).order('answered_at');
+  const uRes = await sb.from('profiles').select('*').eq('id', attempt.user_id).single();
+  const user = uRes.data;
+  const ansRes = await sb.from('answers').select('*').eq('attempt_id', attemptId).order('answered_at');
+  const answers = ansRes.data || [];
 
-  // Собираем вопросы
-  const qIds = (answers || []).map(a => a.question_id);
-  const { data: questions } = await sb.from('questions').select('*').in('id', qIds);
+  const qIds = answers.map(function(a) { return a.question_id; });
+  const qRes = await sb.from('questions').select('*').in('id', qIds);
   const qMap = {};
-  (questions || []).forEach(q => { qMap[q.id] = q; });
+  (qRes.data || []).forEach(function(q) { qMap[q.id] = q; });
 
   const pct = attempt.total > 0 ? Math.round((attempt.score / attempt.total) * 100) : 0;
   const letters = ['а','б','в','г','д','е'];
 
-  let html = `<div class="topbar"><button class="back-btn" onclick="renderCadetDetail('${attempt.user_id}')">←</button>
-    <div class="title">${escapeHtml(user?.callsign || '')} · ${escapeHtml(attempt.blocks?.name || '')}</div></div>
-  <h1>📋 Просмотр ответов</h1>`;
+  let html = '<div class="topbar"><button class="back-btn" onclick="renderCadetDetail(\'' + attempt.user_id + '\')">←</button>' +
+    '<div class="title">' + escapeHtml(user ? user.callsign : '') + ' · ' + escapeHtml(attempt.blocks ? attempt.blocks.name : '') + '</div></div>' +
+    '<h1>📋 Просмотр ответов</h1>';
 
-  html += `<div class="card">
-    <div class="block-title">
-      <div><b>${escapeHtml(user?.callsign || '—')}</b></div>
-      <span class="badge ${pct >= 75 ? 'green' : pct >= 60 ? 'yellow' : 'red'}">${attempt.score} / ${attempt.total} · ${pct}%</span>
-    </div>
-    <div class="meta">Блок: ${escapeHtml(attempt.blocks?.name || '—')} · ${fmtDate(attempt.finished_at)}</div>
-  </div>`;
+  html += '<div class="card">' +
+    '<div class="block-title">' +
+      '<div><b>' + escapeHtml(user ? user.callsign : '—') + '</b></div>' +
+      '<span class="badge ' + (pct >= 75 ? 'green' : pct >= 60 ? 'yellow' : 'red') + '">' + attempt.score + ' / ' + attempt.total + ' · ' + pct + '%</span>' +
+    '</div>' +
+    '<div class="meta">Блок: ' + escapeHtml(attempt.blocks ? attempt.blocks.name : '—') + ' · ' + fmtDate(attempt.finished_at) + '</div>' +
+  '</div>';
 
-  (answers || []).forEach((a, idx) => {
+  answers.forEach(function(a, idx) {
     const q = qMap[a.question_id];
     if (!q) return;
     const opts = Array.isArray(q.options) ? q.options : [];
     const isCorrect = a.is_correct;
     const cls = isCorrect ? 'ok' : '';
-    html += `<div class="err-card ${cls}">
-      <div class="err-q">
-        <span class="badge ${isCorrect ? 'green' : 'red'}">${isCorrect ? '✅' : '❌'}</span>
-        ${idx + 1}. ${escapeHtml(q.text)}
-      </div>
-      <div class="err-opts">
-        ${opts.map((o, i) => {
+    html += '<div class="err-card ' + cls + '">' +
+      '<div class="err-q">' +
+        '<span class="badge ' + (isCorrect ? 'green' : 'red') + '">' + (isCorrect ? '✅' : '❌') + '</span> ' +
+        (idx + 1) + '. ' + escapeHtml(q.text) +
+      '</div>' +
+      '<div class="err-opts">' +
+        opts.map(function(o, i) {
           let mark = '•';
           let klass = '';
           if (i === q.correct_index) { mark = '✓'; klass = 'correct'; }
           if (i === a.selected_index && i !== q.correct_index) { mark = '✗'; klass = 'selected-wrong'; }
           if (i === a.selected_index && i === q.correct_index) { mark = '✓'; klass = 'selected-ok'; }
-          return `<div class="${klass}">${mark} ${letters[i]}) ${escapeHtml(o)}${i === a.selected_index ? ' <i>(ответ стажёра)</i>' : ''}</div>`;
-        }).join('')}
-      </div>
-      ${q.explain ? `<div class="err-opts" style="margin-top:8px;color:var(--text-dim);font-size:12.5px"><b>Объяснение:</b> ${escapeHtml(q.explain)}</div>` : ''}
-    </div>`;
+          return '<div class="' + klass + '">' + mark + ' ' + letters[i] + ') ' + escapeHtml(o) + (i === a.selected_index ? ' <i>(ответ стажёра)</i>' : '') + '</div>';
+        }).join('') +
+      '</div>' +
+      (q.explain ? '<div class="err-opts" style="margin-top:8px;color:var(--text-dim);font-size:12.5px"><b>Объяснение:</b> ' + escapeHtml(q.explain) + '</div>' : '') +
+    '</div>';
   });
 
-  html += `<div class="card">
-    <button class="btn back" onclick="renderCadetDetail('${attempt.user_id}')">← К стажёру</button>
-    <button class="btn back" onclick="renderChiefPanel()">← К списку стажёров</button>
-  </div>`;
+  html += '<div class="card">' +
+    '<button class="btn back" onclick="renderCadetDetail(\'' + attempt.user_id + '\')">← К стажёру</button>' +
+    '<button class="btn back" onclick="renderChiefPanel()">← К списку стажёров</button>' +
+  '</div>';
 
   app.innerHTML = html;
   window.scrollTo(0, 0);
@@ -1378,11 +1400,13 @@ async function renderAttemptDetail(attemptId) {
 // ЭКСПОРТ CSV
 // ============================================================
 function downloadCSV(filename, rows) {
-  const csv = rows.map(r => r.map(cell => {
-    const s = String(cell == null ? '' : cell);
-    if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  }).join(';')).join('\n');
+  const csv = rows.map(function(r) {
+    return r.map(function(cell) {
+      const s = String(cell == null ? '' : cell);
+      if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }).join(';');
+  }).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1395,17 +1419,17 @@ function downloadCSV(filename, rows) {
 }
 
 async function exportResultsCSV() {
-  const [{ data: users }, { data: attempts }] = await Promise.all([
-    sb.from('profiles').select('*').order('callsign'),
-    sb.from('attempts').select('*, blocks(name)').not('finished_at', 'is', null).order('finished_at'),
-  ]);
+  const uRes = await sb.from('profiles').select('*').order('callsign');
+  const aRes = await sb.from('attempts').select('*, blocks(name)').not('finished_at', 'is', null).order('finished_at');
+  const users = uRes.data || [];
+  const attempts = aRes.data || [];
   const userMap = {};
-  (users || []).forEach(u => { userMap[u.id] = u; });
+  users.forEach(function(u) { userMap[u.id] = u; });
   const rows = [['Позывной', 'Роль', 'Дата', 'Блок', 'Правильных', 'Всего', '%']];
-  (attempts || []).forEach(a => {
+  attempts.forEach(function(a) {
     const u = userMap[a.user_id];
     const pct = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
-    rows.push([u?.callsign || '—', u?.role || '—', fmtDate(a.finished_at), a.blocks?.name || '—', a.score, a.total, pct]);
+    rows.push([u ? u.callsign : '—', u ? u.role : '—', fmtDate(a.finished_at), a.blocks ? a.blocks.name : '—', a.score, a.total, pct]);
   });
   downloadCSV('rubezh_rezultaty_' + new Date().toISOString().slice(0, 10) + '.csv', rows);
 }
@@ -1415,11 +1439,11 @@ async function exportCadetCSV(userId) {
   if (!data) return;
   const rows = [['Позывной', 'Вопрос', 'Блок', 'Количество ошибок', 'Правильный ответ', 'Объяснение']];
   const letters = ['а','б','в','г','д','е'];
-  (data.wrongQuestions || []).forEach(q => {
+  (data.wrongQuestions || []).forEach(function(q) {
     const correct = Array.isArray(q.options) && q.options[q.correct_index] ? (letters[q.correct_index] + ') ' + q.options[q.correct_index]) : '';
-    rows.push([data.user?.callsign || '', q.text, q.blocks?.name || '', q.wrongCount, correct, q.explain || '']);
+    rows.push([data.user ? data.user.callsign : '', q.text, q.blocks ? q.blocks.name : '', q.wrongCount, correct, q.explain || '']);
   });
-  downloadCSV('rubezh_' + (data.user?.callsign || 'cadet') + '_oshibki.csv', rows);
+  downloadCSV('rubezh_' + (data.user ? data.user.callsign : 'cadet') + '_oshibki.csv', rows);
 }
 
 // ============================================================
@@ -1468,31 +1492,32 @@ async function tryRestoreNav() {
 }
 
 async function restoreAttempt(nav) {
-  const { data: attempt } = await sb.from('attempts').select('*').eq('id', nav.attemptId).single();
+  const aRes = await sb.from('attempts').select('*').eq('id', nav.attemptId).single();
+  const attempt = aRes.data;
   if (!attempt || attempt.finished_at) return false;
-  const { data: block } = await sb.from('blocks').select('*').eq('id', attempt.block_id).single();
-  if (!block) return false;
-  const { data: allQ } = await sb.from('questions').select('*').eq('block_id', attempt.block_id);
-  if (!allQ || allQ.length === 0) return false;
-  const { data: answers } = await sb.from('answers').select('*').eq('attempt_id', nav.attemptId).order('answered_at');
+  const bRes = await sb.from('blocks').select('*').eq('id', attempt.block_id).single();
+  if (!bRes.data) return false;
+  const qRes = await sb.from('questions').select('*').eq('block_id', attempt.block_id);
+  const allQ = qRes.data || [];
+  if (!allQ.length) return false;
+  const ansRes = await sb.from('answers').select('*').eq('attempt_id', nav.attemptId).order('answered_at');
+  const answers = ansRes.data || [];
 
   let ordered;
   if (nav.questionIds && Array.isArray(nav.questionIds)) {
     const map = {};
-    allQ.forEach(q => { map[q.id] = q; });
-    ordered = nav.questionIds.map(id => map[id]).filter(Boolean);
-    allQ.forEach(q => { if (!nav.questionIds.includes(q.id)) ordered.push(q); });
+    allQ.forEach(function(q) { map[q.id] = q; });
+    ordered = nav.questionIds.map(function(id) { return map[id]; }).filter(Boolean);
+    allQ.forEach(function(q) { if (nav.questionIds.indexOf(q.id) === -1) ordered.push(q); });
   } else {
     ordered = allQ;
   }
 
-  const restoredAnswers = (answers || []).map(a => ({
-    questionId: a.question_id,
-    selectedIndex: a.selected_index,
-    isCorrect: a.is_correct,
-  }));
+  const restoredAnswers = answers.map(function(a) {
+    return { questionId: a.question_id, selectedIndex: a.selected_index, isCorrect: a.is_correct };
+  });
 
-  state.currentBlock = block;
+  state.currentBlock = bRes.data;
   state.currentAttempt = {
     id: attempt.id, blockId: attempt.block_id,
     questions: ordered,
@@ -1502,22 +1527,22 @@ async function restoreAttempt(nav) {
   };
 
   renderQuestionScreen();
-  // Восстанавливаем ответ на текущий вопрос
   const q = ordered[state.currentAttempt.index];
-  const already = restoredAnswers.find(a => a.questionId === q.id);
+  const already = restoredAnswers.find(function(a) { return a.questionId === q.id; });
   if (already) {
-    state.currentAttempt.answers = restoredAnswers.filter(a => a.questionId !== q.id);
-    answerQuestion(already.selectedIndex, true); // true = не писать в БД повторно
+    state.currentAttempt.answers = restoredAnswers.filter(function(a) { return a.questionId !== q.id; });
+    answerQuestion(already.selectedIndex, true);
   }
   return true;
 }
 
 async function restoreResult(attemptId) {
-  const { data: attempt } = await sb.from('attempts').select('*').eq('id', attemptId).single();
+  const aRes = await sb.from('attempts').select('*').eq('id', attemptId).single();
+  const attempt = aRes.data;
   if (!attempt || !attempt.finished_at) return false;
-  const { data: block } = await sb.from('blocks').select('*').eq('id', attempt.block_id).single();
-  if (!block) return false;
-  state.currentBlock = block;
+  const bRes = await sb.from('blocks').select('*').eq('id', attempt.block_id).single();
+  if (!bRes.data) return false;
+  state.currentBlock = bRes.data;
   state.currentAttempt = {
     id: attempt.id, blockId: attempt.block_id,
     questions: [], answers: [], finished: true,
@@ -1532,11 +1557,14 @@ async function restoreResult(attemptId) {
 // ============================================================
 async function init() {
   applyTheme();
-  const { data } = await sb.auth.getSession();
-  if (data?.session) { state.session = data.session; await loadProfile(); }
+  const sessRes = await sb.auth.getSession();
+  if (sessRes.data && sessRes.data.session) {
+    state.session = sessRes.data.session;
+    await loadProfile();
+  }
   const restored = await tryRestoreNav();
   if (!restored) render();
-  sb.auth.onAuthStateChange(async (event, session) => {
+  sb.auth.onAuthStateChange(async function(event, session) {
     state.session = session;
     if (session) await loadProfile(); else state.profile = null;
     render();
